@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>发射</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07090d; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #fps {
+    position: absolute; left: 16px; top: 14px;
+    color: #f6f1e6; font: 14px/1.2 "Segoe UI", "PingFang SC", sans-serif;
+    letter-spacing: 0.08em; font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 2px #000;
+  }
+  #readout {
+    position: absolute; left: 16px; bottom: 16px; max-width: 460px;
+    color: #f6f1e6; font: 13px/1.5 "Segoe UI", "PingFang SC", sans-serif;
+    text-shadow: 0 1px 2px #000;
+  }
+  .panel {
+    position: absolute; right: 16px; top: 14px; width: 230px;
+    padding: 12px 14px 14px; border-radius: 12px;
+    background: rgba(8, 10, 14, 0.62); color: #f6f1e6;
+    font: 12px/1.3 "Segoe UI", "PingFang SC", sans-serif;
+    backdrop-filter: blur(8px);
+  }
+  .panel h1 { margin: 0 0 8px; font-size: 15px; font-weight: 650; letter-spacing: 0.14em; }
+  label { display: block; margin: 8px 0 0; }
+  label span { display: flex; justify-content: space-between; }
+  input[type="range"] { width: 100%; margin-top: 4px; }
+  button {
+    width: 100%; margin-top: 12px; padding: 8px 0;
+    border: 0; border-radius: 8px; cursor: pointer;
+    background: #e6c27a; color: #2a1c0c; font: inherit; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fps">FPS —</div>
+<div id="readout"></div>
+<div class="panel">
+  <h1>发射</h1>
+  <label>推力<span><b id="thrust-v">180</b><span>kN</span></span>
+    <input id="thrust" type="range" min="80" max="360" value="180">
+  </label>
+  <label>剩余推进剂<span><b id="fuel-v">880</b><span>kg</span></span>
+    <input id="fuel" type="range" min="100" max="2500" value="880">
+  </label>
+  <label>粒子数<span><b id="particle-v">520</b></span>
+    <input id="particles" type="range" min="40" max="1200" value="520">
+  </label>
+  <button id="reset" type="button">重置</button>
+</div>
+<script>
+const G = 9.81;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const thrustEl = document.getElementById("thrust");
+const fuelEl = document.getElementById("fuel");
+const particleEl = document.getElementById("particles");
+const fpsEl = document.getElementById("fps");
+const readoutEl = document.getElementById("readout");
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(7);
+const stars = Array.from({ length: 220 }, () => ({
+  x: rand(),
+  y: rand(),
+  r: rand() * 1.4 + 0.3,
+  a: rand() * 0.7 + 0.3
+}));
+
+let dpr = 1;
+let W = 1;
+let H = 1;
+let cam = 0;
+let fps = 60;
+let last = performance.now();
+let particles = [];
+let state;
+
+function fresh() {
+  particles = [];
+  cam = 0;
+  state = {
+    t: 0,
+    phase: "hold",
+    stage: 1,
+    dry: 500,
+    fuel: Number(fuelEl.value),
+    alt: 0,
+    vy: 0,
+    maxA: -Infinity,
+    booster: null,
+    boomed: false,
+    boomT: -99,
+    sepT: -99
+  };
+}
+fresh();
+
+thrustEl.addEventListener("input", () => {
+  document.getElementById("thrust-v").textContent = thrustEl.value;
+});
+fuelEl.addEventListener("input", () => {
+  state.fuel = Number(fuelEl.value);
+  document.getElementById("fuel-v").textContent = fuelEl.value;
+});
+particleEl.addEventListener("input", () => {
+  document.getElementById("particle-v").textContent = particleEl.value;
+});
+document.getElementById("reset").addEventListener("click", fresh);
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = Math.max(1, Math.floor(window.innerWidth * dpr));
+  H = Math.max(1, Math.floor(window.innerHeight * dpr));
+  canvas.width = W;
+  canvas.height = H;
+}
+window.addEventListener("resize", resize);
+resize();
+
+function engine() {
+  const knob = Number(thrustEl.value) * 1000;
+  const burning = state.fuel > 0 && state.phase !== "coast";
+  const F = burning ? knob * (state.stage === 1 ? 1 : 0.42) : 0;
+  const m = state.dry + Math.max(0, state.fuel);
+  return { F, m, a: F / m - G, burning };
+}
+
+function burnRate() {
+  return state.stage === 1 ? 220 : 60;
+}
+
+function separate() {
+  state.booster = { alt: state.alt, vy: state.vy - 90, x: 0, angle: 0.4, spin: 1.7 };
+  state.stage = 2;
+  state.dry = 90;
+  state.fuel = 240;
+  state.sepT = state.t;
+}
+
+function step(dt) {
+  state.t += dt;
+  const before = engine();
+  if (state.phase === "hold") {
+    if (before.burning) state.fuel -= burnRate() * dt;
+    if (state.fuel <= 0) state.fuel = 0;
+    if (state.t >= 0.7) state.phase = "boost";
+  } else {
+    const { a, burning } = before;
+    state.vy += a * dt;
+    state.alt = Math.max(0, state.alt + state.vy * dt);
+    if (burning) {
+      state.fuel -= burnRate() * dt;
+      if (state.fuel <= 0) {
+        state.fuel = 0;
+        if (state.stage === 1) separate();
+        else state.phase = "coast";
+      }
+    }
+    if (state.phase !== "hold" && before.burning && before.a > state.maxA) state.maxA = before.a;
+    if (!state.boomed && state.vy >= 340) {
+      state.boomed = true;
+      state.boomT = state.t;
+    }
+  }
+  if (state.booster) {
+    const b = state.booster;
+    b.vy -= G * dt;
+    b.alt += b.vy * dt;
+    b.x += 36 * dt;
+    b.angle += b.spin * dt;
+    if (b.alt < 0) {
+      b.alt = 0;
+      b.vy = 0;
+      b.spin = 0;
+    }
+  }
+  const lead = (H * 0.07) / (2.5 * Math.max(1, dpr));
+  cam = Math.max(0, state.alt - lead);
+}
+
+function wy(y) {
+  return H * 0.64 - (y - cam) * 2.5 * dpr;
+}
+
+function spawn(kind, x, y, vx, vy, life, size) {
+  particles.push({ kind, x, y, vx, vy, life, max: life, size });
+}
+
+function stepParticles(dt, nozzleX, nozzleY, eng) {
+  const want = Number(particleEl.value);
+  if (eng.burning && state.phase !== "hold") {
+    const n = Math.max(1, Math.round(want * dt));
+    for (let i = 0; i < n; i += 1) {
+      const spread = (Math.random() - 0.5) * 18;
+      spawn(
+        Math.random() < 0.82 ? "flame" : "spark",
+        nozzleX + spread * 0.15,
+        state.alt,
+        spread,
+        state.vy - (160 + Math.random() * 90),
+        0.45 + Math.random() * 0.55,
+        (2 + Math.random() * 4) * dpr
+      );
+    }
+  }
+  if (state.phase === "hold" || state.alt < 80) {
+    const smokeN = Math.max(1, Math.round(want * 0.25 * dt));
+    for (let i = 0; i < smokeN; i += 1) {
+      spawn("smoke", nozzleX + (Math.random() - 0.5) * 14, 0, (Math.random() - 0.5) * 10, 8 + Math.random() * 16, 2.2 + Math.random(), (8 + Math.random() * 14) * dpr);
+    }
+  }
+  for (const p of particles) {
+    p.life -= dt;
+    p.vy -= (p.kind === "smoke" ? 2 : G * 0.15) * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+  if (particles.length > 1600) particles.splice(0, particles.length - 1600);
+  particles = particles.filter((p) => p.life > 0 && p.y > -20);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+function mix(c0, c1, t) {
+  return [lerp(c0[0], c1[0], t), lerp(c0[1], c1[1], t), lerp(c0[2], c1[2], t)];
+}
+function rgb(c) {
+  return `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+}
+
+const skyStops = [
+  { a: 0, top: [18, 48, 86], bot: [232, 196, 150] },
+  { a: 2500, top: [10, 24, 48], bot: [86, 122, 166] },
+  { a: 12000, top: [6, 10, 20], bot: [20, 36, 64] },
+  { a: 40000, top: [2, 3, 8], bot: [6, 8, 16] }
+];
+
+function skyAt(alt) {
+  let i = 0;
+  while (i < skyStops.length - 2 && alt > skyStops[i + 1].a) i += 1;
+  const s0 = skyStops[i];
+  const s1 = skyStops[i + 1];
+  const t = Math.min(1, Math.max(0, (alt - s0.a) / (s1.a - s0.a)));
+  return { top: mix(s0.top, s1.top, t), bot: mix(s0.bot, s1.bot, t) };
+}
+
+function drawSky() {
+  const col = skyAt(cam);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, rgb(col.top));
+  g.addColorStop(1, rgb(col.bot));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  const starAlpha = Math.min(1, Math.max(0, (cam - 800) / 8000));
+  if (starAlpha > 0.02) {
+    ctx.fillStyle = `rgba(255,255,255,${starAlpha})`;
+    for (const s of stars) {
+      ctx.globalAlpha = starAlpha * s.a;
+      ctx.fillRect(s.x * W, s.y * H * 0.75, s.r * dpr, s.r * dpr);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawGround(nozzleX) {
+  const gy = wy(0);
+  if (gy > H + 40) return;
+  ctx.fillStyle = "#31402e";
+  ctx.fillRect(0, gy, W, Math.max(0, H - gy));
+  ctx.fillStyle = "#262a28";
+  ctx.fillRect(0, gy, W, 10 * dpr);
+  ctx.fillStyle = "#4a463e";
+  ctx.fillRect(nozzleX - 34 * dpr, gy - 6 * dpr, 68 * dpr, 8 * dpr);
+  ctx.strokeStyle = "rgba(232,224,208,0.35)";
+  ctx.lineWidth = 1.5 * dpr;
+  const mastX = nozzleX - 78 * dpr;
+  const mastTop = wy(68);
+  ctx.beginPath();
+  ctx.moveTo(mastX, gy);
+  ctx.lineTo(mastX, mastTop);
+  ctx.lineTo(nozzleX - 18 * dpr, wy(58));
+  ctx.moveTo(mastX, wy(40));
+  ctx.lineTo(nozzleX - 22 * dpr, wy(40));
+  ctx.stroke();
+}
+
+function drawVehicle(x, baseY, height, angle, mode) {
+  ctx.save();
+  ctx.translate(x, baseY);
+  ctx.rotate(angle);
+  const w = height * 0.2;
+  const nose = -height;
+  const bodyTop = mode === "booster" ? -height * 0.72 : -height * 0.74;
+  ctx.fillStyle = mode === "booster" ? "#d9d3c6" : "#f7f3ea";
+  ctx.fillRect(-w / 2, bodyTop, w, -bodyTop);
+  if (mode !== "booster") {
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, bodyTop);
+    ctx.lineTo(0, nose);
+    ctx.lineTo(w / 2, bodyTop);
+    ctx.fillStyle = "#d7e4ee";
+    ctx.fill();
+    ctx.fillStyle = "#1b2832";
+    ctx.beginPath();
+    ctx.arc(0, bodyTop + height * 0.16, w * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#24303a";
+  ctx.fillRect(-w / 2, -height * 0.28, w, height * 0.05);
+  ctx.fillStyle = "#9a4030";
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, -height * 0.06);
+  ctx.lineTo(-w * 1.25, height * 0.04);
+  ctx.lineTo(-w / 2, -height * 0.24);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(w / 2, -height * 0.06);
+  ctx.lineTo(w * 1.25, height * 0.04);
+  ctx.lineTo(w / 2, -height * 0.24);
+  ctx.fill();
+  ctx.fillStyle = "#2c261e";
+  ctx.fillRect(-w * 0.32, 0, w * 0.64, 7 * dpr);
+  ctx.restore();
+}
+
+function drawPlume(x, nozzleY, power) {
+  const len = (80 + power * 120) * dpr;
+  const g = ctx.createLinearGradient(x, nozzleY, x, nozzleY + len);
+  g.addColorStop(0, "rgba(255,252,240,0.95)");
+  g.addColorStop(0.18, "rgba(255,186,70,0.85)");
+  g.addColorStop(0.55, "rgba(255,92,28,0.35)");
+  g.addColorStop(1, "rgba(255,60,20,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(x - 7 * dpr, nozzleY);
+  ctx.lineTo(x + 7 * dpr, nozzleY);
+  ctx.lineTo(x + (22 + power * 10) * dpr, nozzleY + len);
+  ctx.lineTo(x - (22 + power * 10) * dpr, nozzleY + len);
+  ctx.fill();
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 1; i <= 6; i += 1) {
+    const yy = nozzleY + (i * len) / 7.2;
+    const rx = (20 - i * 2.2) * dpr * (0.55 + power * 0.35);
+    ctx.beginPath();
+    ctx.ellipse(x, yy, Math.max(2, rx), Math.max(2, rx * 0.42), 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,244,220,${0.5 - i * 0.06})`;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawParticles(originX) {
+  for (const p of particles) {
+    const sx = originX + p.x * 2.5 * dpr;
+    const sy = wy(p.y);
+    const k = p.life / p.max;
+    if (p.kind === "smoke") {
+      ctx.fillStyle = `rgba(90,86,80,${0.18 * k})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, p.size * (1.4 - k), 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.kind === "spark") {
+      ctx.fillStyle = `rgba(255,220,140,${k})`;
+      ctx.fillRect(sx, sy, p.size * 0.45, p.size * 0.45);
+    } else {
+      ctx.fillStyle = `rgba(255,${120 + 80 * k | 0},40,${0.8 * k})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, p.size * k, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawBoom(x, y) {
+  const age = state.t - state.boomT;
+  if (age < 0 || age > 1.3) return;
+  ctx.strokeStyle = `rgba(255,255,255,${1 - age / 1.3})`;
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath();
+  ctx.ellipse(x, y, age * 220 * dpr, age * 70 * dpr, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function draw() {
+  const eng = engine();
+  const power = eng.burning ? Math.min(1.7, 0.7 + eng.F / 220000) : 0;
+  const nozzleX = W * 0.56 + Math.sin(state.t * 48) * (eng.burning ? 1.4 * dpr * power : 0);
+  const baseY = wy(state.alt);
+  drawSky();
+  if (cam > 6000) {
+    ctx.beginPath();
+    ctx.arc(W * 0.5, H + 900 * dpr, 1400 * dpr, 0, Math.PI * 2);
+    ctx.fillStyle = "#16344c";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(150,196,255,0.35)";
+    ctx.lineWidth = 10 * dpr;
+    ctx.stroke();
+  }
+  drawGround(nozzleX);
+  drawParticles(nozzleX);
+  if (state.booster) {
+    const b = state.booster;
+    drawVehicle(nozzleX + b.x * 2.5 * dpr, wy(b.alt), 78 * dpr, b.angle, "booster");
+  }
+  const height = (state.stage === 1 ? 168 : 112) * dpr;
+  if (eng.burning) drawPlume(nozzleX, baseY, power);
+  drawVehicle(nozzleX, baseY, height, 0, state.stage === 1 ? "stack" : "upper");
+  const sepAge = state.t - state.sepT;
+  if (sepAge >= 0 && sepAge < 0.45) {
+    ctx.fillStyle = `rgba(255,244,220,${0.45 - sepAge})`;
+    ctx.beginPath();
+    ctx.arc(nozzleX, baseY + 20 * dpr, (20 + sepAge * 180) * dpr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  drawBoom(nozzleX, baseY + 30 * dpr);
+  const stageName = state.phase === "coast" ? "惯性飞行" : state.stage === 1 ? "一级" : "上面级";
+  const peak = Number.isFinite(state.maxA) ? state.maxA.toFixed(1) : "—";
+  readoutEl.textContent =
+    `${stageName}  高度 ${state.alt.toFixed(0)} m  速度 ${state.vy.toFixed(0)} m/s\n` +
+    `F = ${(eng.F / 1000).toFixed(1)} kN    m = ${eng.m.toFixed(0)} kg    a = F/m − g = ${eng.a.toFixed(1)} m/s²\n` +
+    `峰值 a = ${peak} m/s²。a 最大出现在上面级燃料烧尽、发动机还没熄火的瞬间。`;
+}
+
+function frame(now) {
+  const speed = location.hash === "#slow" ? 0.22 : 1;
+  const raw = Math.max(0.001, (now - last) / 1000);
+  const dt = Math.min(0.033, raw) * speed;
+  last = now;
+  fps = fps * 0.9 + (1 / raw) * 0.1;
+  fpsEl.textContent = `FPS ${fps.toFixed(0)}`;
+  document.getElementById("fuel-v").textContent = String(Math.max(0, Math.round(state.fuel)));
+  document.getElementById("thrust-v").textContent = thrustEl.value;
+  document.getElementById("particle-v").textContent = particleEl.value;
+  step(dt);
+  const eng = engine();
+  stepParticles(dt, 0, state.alt, eng);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

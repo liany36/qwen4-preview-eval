@@ -1,0 +1,73 @@
+# Materials for out.obj
+
+newmtl floor
+Ka 0 0 0
+Kd 0.8510 0.8039 0.7216
+Ks 0.05 0.05 0.05
+Ns 20
+d 1.000
+Tr 0.000
+illum 2
+
+newmtl wall
+Ka 0 0 0
+Kd 0.9490 0.9412 0.9216
+Ks 0.05 0.05 0.05
+Ns 20
+d 1.000
+Tr 0.000
+illum 2
+
+newmtl window_glass
+Ka 0 0 0
+Kd 0.2902 0.6392 0.9098
+Ks 0.05 0.05 0.05
+Ns 20
+d 0.450
+Tr 0.550
+illum 4
+
+newmtl wood
+Ka 0 0 0
+Kd 0.6588 0.4784 0.3098
+Ks 0.05 0.05 0.05
+Ns 20
+d 1.000
+Tr 0.000
+illum 2
+
+newmtl metal
+Ka 0 0 0
+Kd 0.3333 0.3451 0.3686
+Ks 0.05 0.05 0.05
+Ns 20
+d 1.000
+Tr 0.000
+illum 2
+
+newmtl fabric
+Ka 0 0 0
+Kd 0.2471 0.4353 0.5608
+Ks 0.05 0.05 0.05
+Ns 20
+d 1.000
+Tr 0.000
+illum 2
+
+newmtl cabinet
+Ka 0 0 0
+Kd 0.9020 0.8824 0.8392
+Ks 0.05 0.05 0.05
+Ns 20
+d 1.000
+Tr 0.000
+illum 2
+
+newmtl handle
+Ka 0 0 0
+Kd 0.1686 0.1686 0.1686
+Ks 0.05 0.05 0.05
+Ns 20
+d 1.000
+Tr 0.000
+illum 2

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <desc>Office floor plan. 100 SVG units = 1 metre. Outer envelope 6.00 m x 4.00 m (x:100-700, y:100-500).</desc>
+  <rect x="0" y="0" width="800" height="600" fill="#f7f6f3"/>
+
+  <!-- 墙：class="wall" -->
+  <g class="walls" stroke="#333" stroke-width="4" stroke-linecap="square">
+    <!-- 上外墙，中间留门洞 380-460 -->
+    <line class="wall" x1="100" y1="100" x2="380" y2="100"/>
+    <line class="wall" x1="460" y1="100" x2="700" y2="100"/>
+    <!-- 右外墙 -->
+    <line class="wall" x1="700" y1="100" x2="700" y2="500"/>
+    <!-- 下外墙，门洞 480-560 -->
+    <line class="wall" x1="700" y1="500" x2="560" y2="500"/>
+    <line class="wall" x1="480" y1="500" x2="100" y2="500"/>
+    <!-- 左外墙 -->
+    <line class="wall" x1="100" y1="500" x2="100" y2="100"/>
+    <!-- 内隔墙 x=400，门洞 240-320 -->
+    <line class="wall" x1="400" y1="100" x2="400" y2="240"/>
+    <line class="wall" x1="400" y1="320" x2="400" y2="500"/>
+    <!-- 储物间隔墙 -->
+    <line class="wall" x1="400" y1="320" x2="560" y2="320"/>
+  </g>
+
+  <!-- 门洞：只用于标注，不画墙 -->
+  <g class="doors" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4">
+    <line class="door" x1="380" y1="100" x2="460" y2="100"/>
+    <line class="door" x1="480" y1="500" x2="560" y2="500"/>
+    <line class="door" x1="400" y1="240" x2="400" y2="320"/>
+  </g>
+
+  <!-- 窗 -->
+  <g class="windows" stroke="#3d8ec9" stroke-width="6">
+    <line class="window" x1="560" y1="100" x2="680" y2="100"/>
+    <line class="window" x1="700" y1="220" x2="700" y2="340"/>
+    <line class="window" x1="100" y1="180" x2="100" y2="300"/>
+  </g>
+
+  <!-- 房间名 -->
+  <g font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#7a7a7a">
+    <text x="230" y="300">办公区</text>
+    <text x="520" y="200">会议室</text>
+    <text x="450" y="430">储物间</text>
+  </g>
+
+  <!-- 标注 -->
+  <g font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#9a9a9a">
+    <text x="100" y="545">1 unit = 1 cm  ·  envelope 6.00 m x 4.00 m</text>
+  </g>
+</svg>

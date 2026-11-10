@@ -1,0 +1,64 @@
+# out.mtl — generated from scene materials
+newmtl mat_floor
+Ka 0.200 0.200 0.200
+Kd 0.8510 0.8235 0.7804
+Ks 0.100 0.100 0.100
+Ns 32.0
+illum 2
+d 1.000
+
+newmtl mat_wall
+Ka 0.200 0.200 0.200
+Kd 0.9098 0.8941 0.8627
+Ks 0.100 0.100 0.100
+Ns 32.0
+illum 2
+d 1.000
+
+newmtl mat_glass
+Ka 0.200 0.200 0.200
+Kd 0.2902 0.6392 0.8745
+Ks 0.100 0.100 0.100
+Ns 32.0
+illum 2
+d 0.380
+
+newmtl mat_desk
+Ka 0.200 0.200 0.200
+Kd 0.7098 0.5059 0.3137
+Ks 0.100 0.100 0.100
+Ns 32.0
+illum 2
+d 1.000
+
+newmtl mat_chair
+Ka 0.200 0.200 0.200
+Kd 0.4353 0.4627 0.5059
+Ks 0.100 0.100 0.100
+Ns 32.0
+illum 2
+d 1.000
+
+newmtl mat_table_l
+Ka 0.200 0.200 0.200
+Kd 0.6627 0.4431 0.2471
+Ks 0.100 0.100 0.100
+Ns 32.0
+illum 2
+d 1.000
+
+newmtl mat_cabinet
+Ka 0.200 0.200 0.200
+Kd 0.4863 0.5294 0.5804
+Ks 0.100 0.100 0.100
+Ns 32.0
+illum 2
+d 1.000
+
+newmtl mat_sideboard
+Ka 0.200 0.200 0.200
+Kd 0.5529 0.4353 0.3412
+Ks 0.100 0.100 0.100
+Ns 32.0
+illum 2
+d 1.000

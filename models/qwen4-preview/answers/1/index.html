@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图纸 → 3D 房间 · D</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  body { display: flex; flex-direction: column; background: #eef0f2; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: #23272e; color: #eee; flex-wrap: wrap; }
+  header .dims { font-size: 18px; font-weight: 700; color: #7fd0ff; }
+  header button { padding: 6px 12px; border: 0; border-radius: 6px; background: #3d8ec9; color: #fff; cursor: pointer; font-size: 13px; }
+  header button:hover { background: #55a3dc; }
+  header button.warn { background: #c0392b; }
+  #main { flex: 1; display: flex; min-height: 0; }
+  #panel { width: 210px; background: #fff; border-right: 1px solid #ddd; padding: 12px; overflow-y: auto; }
+  #panel h3 { margin: 4px 0 10px; font-size: 14px; color: #444; }
+  .furn { display: flex; align-items: center; gap: 8px; padding: 10px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 8px; background: #fafafa; cursor: grab; user-select: none; }
+  .furn:active { cursor: grabbing; }
+  .furn .swatch { width: 28px; height: 28px; border-radius: 4px; }
+  .furn small { color: #888; display: block; }
+  #hint { font-size: 12px; color: #777; line-height: 1.6; margin-top: 14px; }
+  #viewport { flex: 1; position: relative; min-width: 0; }
+  #viewport canvas { display: block; }
+  #status { position: absolute; left: 10px; bottom: 10px; background: rgba(35,39,46,.85); color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 13px; pointer-events: none; max-width: 70%; }
+  #status.bad { background: rgba(192,57,43,.92); }
+  #exportList { font-size: 12px; color: #555; margin-top: 10px; background: #f4f6f8; border-radius: 6px; padding: 8px; line-height: 1.7; }
+  #fileInput { display: none; }
+  .overlay { position: absolute; inset: 0; background: rgba(255,255,255,.94); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; z-index: 10; }
+  .overlay p { max-width: 480px; color: #555; line-height: 1.7; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dims" id="dims">解析中…</span>
+  <span id="counts" style="font-size:12px;color:#aaa"></span>
+  <span style="flex:1"></span>
+  <button id="btnLoad">载入新图纸 (SVG)</button>
+  <button id="btnReset" class="warn">撤销：回到刚导入图纸</button>
+  <button id="btnGlb">导出 out.glb</button>
+  <button id="btnObj">导出 out.obj + out.mtl</button>
+  <input type="file" id="fileInput" accept=".svg,image/svg+xml">
+</header>
+<div id="main">
+  <div id="panel">
+    <h3>家具（拖进场景）</h3>
+    <div class="furn" draggable="true" data-type="desk">
+      <div class="swatch" style="background:#b98a5a"></div>
+      <div>桌子<small>1.4 × 0.7 m</small></div>
+    </div>
+    <div class="furn" draggable="true" data-type="chair">
+      <div class="swatch" style="background:#4a6fa5"></div>
+      <div>椅子<small>0.5 × 0.5 m</small></div>
+    </div>
+    <div class="furn" draggable="true" data-type="cabinet">
+      <div class="swatch" style="background:#7d8471"></div>
+      <div>柜子<small>0.9 × 0.45 m</small></div>
+    </div>
+    <div id="hint">
+      左键拖动家具改位置（0.1 m 网格吸附）<br>
+      空白处左键拖动 = 旋转视角，右键 = 平移，滚轮 = 缩放<br>
+      选中后：方向键 ±10 cm，R 旋转 15°，Delete 删除<br>
+      红色 = 穿墙 / 叠放，导出时会原样保留并提示
+    </div>
+    <div id="exportList">尚未导入图纸</div>
+  </div>
+  <div id="viewport">
+    <div id="status"></div>
+    <div class="overlay" id="loadOverlay" style="display:none">
+      <p>浏览器双击（file://）打开时无法自动读取图纸文件。<br>
+      点击下方按钮选择 <b>assets/floorplan.svg</b>，或用静态服务器打开本目录（如 <code>python -m http.server</code>）。</p>
+      <button onclick="document.getElementById('fileInput').click()" style="padding:8px 16px">选择 floorplan.svg</button>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="vendor/BufferGeometryUtils.js"></script>
+<script src="vendor/GLTFExporter.js"></script>
+<script src="vendor/OBJExporter.js"></script>
+<script src="embedded.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

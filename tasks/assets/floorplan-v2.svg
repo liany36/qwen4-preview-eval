@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-600 0 800 800" width="800" height="800">
+  <desc>Office floor plan (v2). 100 SVG units = 1 metre. Drawn by a different designer: walls are one rect plus polylines, the whole plan is rotated.</desc>
+  <rect x="-600" y="0" width="800" height="800" fill="#fbfaf7"/>
+
+  <!-- 整张图被设计师旋转了 90 度 -->
+  <g transform="rotate(90)">
+    <!-- 外墙：用 rect 画的 -->
+    <rect class="wall" x="100" y="100" width="600" height="400" fill="none" stroke="#333" stroke-width="4"/>
+
+    <!-- 内隔墙：一条线直接贯穿整屋，中间才是门洞 -->
+    <line class="wall" x1="400" y1="100" x2="400" y2="500"/>
+    <line class="door" x1="400" y1="240" x2="400" y2="320" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4"/>
+
+    <!-- 储物间：polyline 折的 L 形 -->
+    <polyline class="wall" points="400,320 560,320 560,500" fill="none" stroke="#333" stroke-width="4"/>
+
+    <!-- 窗：用 path -->
+    <path class="window" d="M560 100 L680 100" stroke="#3d8ec9" stroke-width="6" fill="none"/>
+    <path class="window" d="M700 220 L700 340" stroke="#3d8ec9" stroke-width="6" fill="none"/>
+    <path class="window" d="M100 180 L100 300" stroke="#3d8ec9" stroke-width="6" fill="none"/>
+
+    <!-- 门洞标注（外墙上的两处，墙本身已经是断的） -->
+    <line class="door" x1="380" y1="100" x2="460" y2="100" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4"/>
+    <line class="door" x1="480" y1="500" x2="560" y2="500" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4"/>
+  </g>
+</svg>

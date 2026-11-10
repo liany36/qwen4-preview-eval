@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>火箭发射 · 实时渲染</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: #05070c; overflow: hidden; }
+  canvas { display: block; }
+
+  #fps {
+    position: fixed; top: 12px; right: 14px;
+    font: 600 12px/1.4 ui-monospace, "SF Mono", Consolas, monospace;
+    color: #9fe8c2; background: rgba(6,12,18,.55);
+    border: 1px solid rgba(110,220,170,.22); border-radius: 6px;
+    padding: 5px 9px; letter-spacing: .04em; backdrop-filter: blur(4px);
+  }
+  #fps b { color: #eafff5; }
+
+  #panel {
+    position: fixed; left: 14px; bottom: 14px; width: 262px;
+    background: rgba(8,13,20,.72);
+    border: 1px solid rgba(120,150,190,.18);
+    border-radius: 10px;
+    padding: 12px 14px 10px;
+    font: 12px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: #c9d6e4; backdrop-filter: blur(8px);
+  }
+  #panel h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+    margin: 0 0 10px; color: #7f92a8; font-weight: 600;
+  }
+  .row { margin-bottom: 9px; }
+  .row label { display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .row label span:last-child { color: #7de3b0; font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    width: 100%; height: 16px; -webkit-appearance: none; appearance: none;
+    background: transparent; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 3px; border-radius: 2px;
+    background: linear-gradient(90deg, #2f8f68, #3a4b63);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: #7de3b0; margin-top: -4.5px; box-shadow: 0 0 8px rgba(125,227,176,.5);
+  }
+  input[type=range]::-moz-range-track { height: 3px; background: #3a4b63; border-radius: 2px; }
+  input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; border: 0; border-radius: 50%; background: #7de3b0;
+  }
+  #reset {
+    width: 100%; margin-top: 4px; padding: 7px 0;
+    font: inherit; font-weight: 600; color: #d8ffe9; cursor: pointer;
+    background: rgba(45,140,100,.22); border: 1px solid rgba(110,220,170,.35);
+    border-radius: 7px;
+  }
+  #reset:hover { background: rgba(45,140,100,.36); }
+
+  #tele {
+    position: fixed; right: 14px; bottom: 14px;
+    background: rgba(8,13,20,.7);
+    border: 1px solid rgba(120,150,190,.18);
+    border-radius: 10px; padding: 10px 14px;
+    font: 12px/1.75 ui-monospace, "SF Mono", Consolas, monospace;
+    color: #8fa4bb; backdrop-filter: blur(8px);
+    min-width: 186px;
+  }
+  #tele div { display: flex; justify-content: space-between; gap: 14px; }
+  #tele b { color: #e6f4ff; font-weight: 600; }
+  #tele .hot b { color: #ffcb6b; }
+
+  #phase {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    font: 500 13px/1 ui-monospace, monospace; letter-spacing: .22em;
+    color: rgba(200,225,250,.7); text-transform: uppercase;
+    padding: 7px 14px; border: 1px solid rgba(120,150,190,.16);
+    border-radius: 20px; background: rgba(8,13,20,.5); backdrop-filter: blur(4px);
+  }
+  #note {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    max-width: 470px; text-align: center;
+    font: 11px/1.6 -apple-system, "Microsoft YaHei", system-ui, sans-serif;
+    color: rgba(150,172,196,.62);
+    pointer-events: none;
+  }
+  @media (max-width: 900px) {
+    #note { display: none; }
+    #panel { width: 210px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="fps">FPS <b>–</b></div>
+<div id="phase">待点火</div>
+
+<div id="panel">
+  <h2>参数</h2>
+  <div class="row">
+    <label><span>推力</span><span id="vThrust">40 kN</span></label>
+    <input type="range" id="thrust" min="12" max="70" value="40" step="1">
+  </div>
+  <div class="row">
+    <label><span>粒子密度</span><span id="vDens">1.00×</span></label>
+    <input type="range" id="dens" min="0.2" max="2" value="1" step="0.05">
+  </div>
+  <div class="row">
+    <label><span>燃耗率</span><span id="vBurn">90 kg/s</span></label>
+    <input type="range" id="burn" min="60" max="160" value="90" step="5">
+  </div>
+  <button id="reset">重播</button>
+</div>
+
+<div id="tele">
+  <div><span>高度</span><b id="tAlt">0 m</b></div>
+  <div><span>速度</span><b id="tVel">0 m/s</b></div>
+  <div><span>质量</span><b id="tMass">1,500 kg</b></div>
+  <div class="hot"><span>加速度</span><b id="tAcc">0.0 m/s²</b></div>
+</div>
+
+<div id="note">推力恒定、质量随燃料递减：a = (T − mg − ½ρC<sub>d</sub>Av²) / m。燃料耗尽那一刻 m 最小，加速度达到全程最大值。</div>
+
+<script src="vendor/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ==================================================================
+     世界尺度：1 场景单位 = 5 m。火箭本体高约 13 单位 ≈ 65 m。
+     ================================================================== */
+  var UNIT = 5;
+  var G = 9.81;
+
+  var params = { thrustKn: 40, density: 1.0, burnRate: 90 };
+
+  var state = {
+    t: 0,
+    phase: 'ignite',      // ignite | stage1 | sep | stage2 | coast | ended
+    y: 0, v: 0, a: 0,
+    prop1: 700,
+    prop2: 300,
+    thr: 0,
+    maxAcc: 0,
+    autoResetAt: 24
+  };
+
+  // 起飞质量 1500 kg：助推干重 250 + 上面级干重 250 + 一级燃料 700 + 二级燃料 300
+  var MASS = {
+    boosterDry: 250,
+    upperDry: 250,
+    prop1: 700,
+    prop2: 300,
+    thrust2: 20000,
+    area: 0.64,   // 迎风面积 m²（弹径约 0.9 m）
+    cd: 0.55
+  };
+
+  /* ---------------- 渲染基础 ---------------- */
+  var renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  document.body.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.2, 20000);
+  camera.position.set(16, 5, 24);
+
+  // 天空穹顶：自下而上由暗橙雾过渡到深空蓝黑
+  var skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {
+      cLow: { value: new THREE.Color(0x33200f) },
+      cMid: { value: new THREE.Color(0x0a1220) },
+      cHigh: { value: new THREE.Color(0x03050a) }
+    },
+    vertexShader: [
+      'varying vec3 vPos;',
+      'void main(){ vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }'
+    ].join('\n'),
+    fragmentShader: [
+      'varying vec3 vPos;',
+      'uniform vec3 cLow; uniform vec3 cMid; uniform vec3 cHigh;',
+      'void main(){',
+      '  float h = clamp(normalize(vPos).y * 0.5 + 0.5, 0.0, 1.0);',
+      '  vec3 c = mix(cLow, cMid, smoothstep(0.40, 0.60, h));',
+      '  c = mix(c, cHigh, smoothstep(0.56, 0.95, h));',
+      '  gl_FragColor = vec4(c, 1.0);',
+      '}'
+    ].join('\n')
+  });
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(9000, 32, 24), skyMat));
+
+  // 星空
+  (function stars() {
+    var n = 900, pos = new Float32Array(n * 3), sz = new Float32Array(n);
+    for (var i = 0; i < n; i++) {
+      var u = Math.random() * Math.PI * 2;
+      var v = Math.acos(Math.random() * 0.97);
+      var r = 6000;
+      pos[i * 3] = Math.sin(v) * Math.cos(u) * r;
+      pos[i * 3 + 1] = Math.cos(v) * r * 0.9 + 300;
+      pos[i * 3 + 2] = Math.sin(v) * Math.sin(u) * r;
+      sz[i] = 1.5 + Math.random() * 3.5;
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aSize', new THREE.BufferAttribute(sz, 1));
+    var m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: [
+        'attribute float aSize; varying float vA;',
+        'void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0);',
+        '  vA = clamp(1.0 - length(mv.xyz)/9000.0, 0.18, 1.0);',
+        '  gl_PointSize = aSize; gl_Position = projectionMatrix * mv; }'
+      ].join('\n'),
+      fragmentShader: [
+        'varying float vA;',
+        'void main(){ vec2 d = gl_PointCoord - vec2(0.5);',
+        '  float a = smoothstep(0.5, 0.0, length(d)) * vA;',
+        '  gl_FragColor = vec4(vec3(0.82,0.9,1.0), a); }'
+      ].join('\n')
+    });
+    scene.add(new THREE.Points(g, m));
+  })();
+
+  /* ---------------- 灯光 ---------------- */
+  scene.add(new THREE.HemisphereLight(0x9fc4ff, 0x1a1410, 0.5));
+  var key = new THREE.DirectionalLight(0xfff0d8, 1.2);
+  key.position.set(-30, 60, 40);
+  scene.add(key);
+  var rim = new THREE.DirectionalLight(0x6fa8ff, 0.75);
+  rim.position.set(40, 20, -30);
+  scene.add(rim);
+
+  var engineLight = new THREE.PointLight(0xffb066, 0, 300, 2);
+  scene.add(engineLight);
+
+  /* ---------------- 地面与发射台 ---------------- */
+  var ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(20000, 20000),
+    new THREE.MeshStandardMaterial({ color: 0x161a20, roughness: 0.96, metalness: 0.05 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.05;
+  scene.add(ground);
+
+  var grid = new THREE.GridHelper(3000, 60, 0x2b3a4a, 0x1a222b);
+  grid.position.y = 0.01;
+  scene.add(grid);
+
+  var padMat = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.85, metalness: 0.25 });
+  var pad = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 4.0, 0.7, 24), padMat);
+  pad.position.y = 0.35;
+  scene.add(pad);
+
+  var padRing = new THREE.Mesh(
+    new THREE.TorusGeometry(3.5, 0.16, 8, 32),
+    new THREE.MeshStandardMaterial({ color: 0x8a5a2a, emissive: 0x4a2a10, roughness: 0.6 })
+  );
+  padRing.rotation.x = Math.PI / 2;
+  padRing.position.y = 0.72;
+  scene.add(padRing);
+
+  // 塔架
+  var towerMat = new THREE.MeshStandardMaterial({ color: 0x3b4450, roughness: 0.7, metalness: 0.5 });
+  (function tower() {
+    var p = new THREE.Group();
+    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (o) {
+      var leg = new THREE.Mesh(new THREE.BoxGeometry(0.4, 17, 0.4), towerMat);
+      leg.position.set(o[0] * 1.3, 8.5, o[1] * 1.3);
+      p.add(leg);
+    });
+    for (var k = 2; k <= 4; k++) {
+      var beam = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.25, 0.25), towerMat);
+      beam.position.set(0, k * 3.6, -1.3);
+      p.add(beam);
+      var beam2 = beam.clone();
+      beam2.position.z = 1.3;
+      p.add(beam2);
+    }
+    var arm = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.35, 0.35), towerMat);
+    arm.position.set(2.4, 12.5, 0);
+    p.add(arm);
+    var spike = new THREE.Mesh(new THREE.ConeGeometry(0.14, 2.6, 6), towerMat);
+    spike.position.y = 18.3;
+    p.add(spike);
+    p.position.set(-6.2, 0, 0);
+    scene.add(p);
+  })();
+
+  /* ---------------- 程序化贴图（不下载任何外部资源） ---------------- */
+  function radialTexture(size, stops) {
+    var c = document.createElement('canvas');
+    c.width = c.height = size;
+    var ctx = c.getContext('2d');
+    var g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    stops.forEach(function (s) { g.addColorStop(s[0], s[1]); });
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    var tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  var texSoft = radialTexture(128, [
+    [0, 'rgba(255,255,255,1)'],
+    [0.32, 'rgba(255,255,255,0.58)'],
+    [0.72, 'rgba(255,255,255,0.12)'],
+    [1, 'rgba(255,255,255,0)']
+  ]);
+  var texPuff = radialTexture(128, [
+    [0, 'rgba(255,255,255,0.9)'],
+    [0.5, 'rgba(255,255,255,0.38)'],
+    [1, 'rgba(255,255,255,0)']
+  ]);
+  var texDiamond = (function () {
+    var s = 128, c = document.createElement('canvas');
+    c.width = c.height = s;
+    var ctx = c.getContext('2d');
+    ctx.translate(s / 2, s / 2);
+    ctx.rotate(Math.PI / 4);
+    var g = ctx.createRadialGradient(0, 0, 0, 0, 0, s * 0.34);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.42, 'rgba(190,228,255,0.55)');
+    g.addColorStop(1, 'rgba(120,170,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(-s * 0.34, -s * 0.34, s * 0.68, s * 0.68);
+    var t = new THREE.CanvasTexture(c);
+    t.needsUpdate = true;
+    return t;
+  })();
+
+  /* ---------------- 粒子池 ---------------- */
+  function ParticlePool(max, opts) {
+    this.max = max;
+    this.cursor = 0;
+
+    var pos = new Float32Array(max * 3);
+    var col = new Float32Array(max * 3);
+    var siz = new Float32Array(max);
+    var alp = new Float32Array(max);
+    for (var i = 0; i < max; i++) { pos[i * 3 + 1] = 1e6; }
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(siz, 1));
+    geo.setAttribute('aAlpha', new THREE.BufferAttribute(alp, 1));
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9);
+
+    var mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: opts.blending,
+      uniforms: { uMap: { value: opts.texture }, uScale: { value: 800 } },
+      vertexShader: [
+        'attribute vec3 aColor; attribute float aSize; attribute float aAlpha;',
+        'uniform float uScale;',
+        'varying vec3 vC; varying float vA;',
+        'void main(){',
+        '  vC = aColor; vA = aAlpha;',
+        '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+        '  gl_PointSize = max(1.0, aSize * uScale / max(0.001, -mv.z));',
+        '  gl_Position = projectionMatrix * mv;',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'uniform sampler2D uMap;',
+        'varying vec3 vC; varying float vA;',
+        'void main(){',
+        '  vec4 t = texture2D(uMap, gl_PointCoord);',
+        '  float a = t.a * vA;',
+        '  if (a < 0.004) discard;',
+        '  gl_FragColor = vec4(vC, a);',
+        '}'
+      ].join('\n')
+    });
+
+    this.points = new THREE.Points(geo, mat);
+    this.points.frustumCulled = false;
+    this.geo = geo;
+    this.mat = mat;
+
+    this.p = new Float32Array(max * 3);
+    this.v = new Float32Array(max * 3);
+    this.life = new Float32Array(max);
+    this.maxLife = new Float32Array(max);
+    this.size0 = new Float32Array(max);
+    this.grow = new Float32Array(max);
+    this.c0 = new Float32Array(max * 3);
+    this.c1 = new Float32Array(max * 3);
+    this.drag = new Float32Array(max);
+    this.buoy = new Float32Array(max);
+    this.a0 = new Float32Array(max);
+  }
+
+  ParticlePool.prototype.spawn = function (p, v, o) {
+    var i = this.cursor;
+    for (var k = 0; k < 48; k++) {
+      if (this.life[i] <= 0) break;
+      i = (i + 1) % this.max;
+    }
+    this.cursor = (i + 1) % this.max;
+
+    this.p[i * 3] = p.x; this.p[i * 3 + 1] = p.y; this.p[i * 3 + 2] = p.z;
+    this.v[i * 3] = v.x; this.v[i * 3 + 1] = v.y; this.v[i * 3 + 2] = v.z;
+
+    this.maxLife[i] = o.life;
+    this.life[i] = o.life;
+    this.size0[i] = o.size;
+    this.grow[i] = o.grow;
+    this.drag[i] = o.drag === undefined ? 0.4 : o.drag;
+    this.buoy[i] = o.buoy || 0;
+    this.a0[i] = o.alpha === undefined ? 1 : o.alpha;
+
+    this.c0[i * 3] = o.c0[0]; this.c0[i * 3 + 1] = o.c0[1]; this.c0[i * 3 + 2] = o.c0[2];
+    this.c1[i * 3] = o.c1[0]; this.c1[i * 3 + 1] = o.c1[1]; this.c1[i * 3 + 2] = o.c1[2];
+  };
+
+  ParticlePool.prototype.update = function (dt) {
+    var pos = this.geo.attributes.position.array;
+    var col = this.geo.attributes.aColor.array;
+    var siz = this.geo.attributes.aSize.array;
+    var alp = this.geo.attributes.aAlpha.array;
+
+    for (var i = 0; i < this.max; i++) {
+      if (this.life[i] <= 0) { alp[i] = 0; siz[i] = 0; continue; }
+
+      this.life[i] -= dt;
+      if (this.life[i] <= 0) {
+        alp[i] = 0; siz[i] = 0;
+        pos[i * 3 + 1] = 1e6;
+        continue;
+      }
+
+      var k = 1 - this.life[i] / this.maxLife[i];
+
+      var d = Math.exp(-this.drag[i] * dt);
+      this.v[i * 3] *= d;
+      this.v[i * 3 + 1] *= d;
+      this.v[i * 3 + 2] *= d;
+      this.v[i * 3 + 1] += (this.buoy[i] - 1.2) * dt;
+
+      this.p[i * 3] += this.v[i * 3] * dt;
+      this.p[i * 3 + 1] += this.v[i * 3 + 1] * dt;
+      this.p[i * 3 + 2] += this.v[i * 3 + 2] * dt;
+
+      pos[i * 3] = this.p[i * 3];
+      pos[i * 3 + 1] = this.p[i * 3 + 1];
+      pos[i * 3 + 2] = this.p[i * 3 + 2];
+
+      col[i * 3] = this.c0[i * 3] + (this.c1[i * 3] - this.c0[i * 3]) * k;
+      col[i * 3 + 1] = this.c0[i * 3 + 1] + (this.c1[i * 3 + 1] - this.c0[i * 3 + 1]) * k;
+      col[i * 3 + 2] = this.c0[i * 3 + 2] + (this.c1[i * 3 + 2] - this.c0[i * 3 + 2]) * k;
+
+      siz[i] = this.size0[i] * (1 + this.grow[i] * k);
+      var fadeIn = Math.min(1, k / 0.07);
+      var fadeOut = 1 - Math.pow(k, 1.7);
+      alp[i] = this.a0[i] * fadeIn * fadeOut;
+    }
+
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.aColor.needsUpdate = true;
+    this.geo.attributes.aSize.needsUpdate = true;
+    this.geo.attributes.aAlpha.needsUpdate = true;
+  };
+
+  var hotPool = new ParticlePool(7000, { texture: texSoft, blending: THREE.AdditiveBlending });
+  var smokePool = new ParticlePool(5000, { texture: texPuff, blending: THREE.NormalBlending });
+  scene.add(hotPool.points);
+  scene.add(smokePool.points);
+
+  /* ---------------- 火箭（程序化几何） ---------------- */
+  var matBody = new THREE.MeshStandardMaterial({ color: 0xdfe4ea, roughness: 0.38, metalness: 0.55 });
+  var matDark = new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 0.55, metalness: 0.7 });
+  var matAccent = new THREE.MeshStandardMaterial({ color: 0xb5472e, roughness: 0.5, metalness: 0.2 });
+  var matBell = new THREE.MeshStandardMaterial({
+    color: 0x4a4a52, roughness: 0.35, metalness: 0.9, side: THREE.DoubleSide
+  });
+
+  function makeRocket() {
+    var root = new THREE.Group();
+
+    // 一级
+    var booster = new THREE.Group();
+    booster.name = 'booster';
+    var bBody = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 6.2, 24), matBody);
+    bBody.position.y = 3.2;
+    booster.add(bBody);
+
+    var band = new THREE.Mesh(new THREE.CylinderGeometry(1.03, 1.03, 0.5, 24), matAccent);
+    band.position.y = 5.4;
+    booster.add(band);
+    var band2 = band.clone();
+    band2.position.y = 0.9;
+    booster.add(band2);
+
+    var skirt = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.15, 1.0, 24), matDark);
+    skirt.position.y = 0.4;
+    booster.add(skirt);
+
+    var bell = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.92, 1.5, 24, 1, true), matBell);
+    bell.position.y = -0.55;
+    booster.add(bell);
+
+    // 四片尾翼
+    var finShape = new THREE.Shape();
+    finShape.moveTo(0, 0);
+    finShape.lineTo(1.45, -0.55);
+    finShape.lineTo(1.45, 0.35);
+    finShape.lineTo(0, 2.2);
+    finShape.lineTo(0, 0);
+    var finGeo = new THREE.ExtrudeGeometry(finShape, { depth: 0.12, bevelEnabled: false });
+    for (var f = 0; f < 4; f++) {
+      var fin = new THREE.Mesh(finGeo, matDark);
+      fin.rotation.y = f * Math.PI / 2;
+      fin.position.set(0.0, 0.35, 0.0);
+      booster.add(fin);
+    }
+    root.add(booster);
+
+    // 二级 + 整流罩
+    var upper = new THREE.Group();
+    upper.name = 'upper';
+    var interstage = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 1.2, 24), matDark);
+    interstage.position.y = 6.9;
+    upper.add(interstage);
+
+    var uBody = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 4.2, 24), matBody);
+    uBody.position.y = 9.6;
+    upper.add(uBody);
+
+    var uBand = new THREE.Mesh(new THREE.CylinderGeometry(1.03, 1.03, 0.4, 24), matAccent);
+    uBand.position.y = 8.2;
+    upper.add(uBand);
+
+    var nose = new THREE.Mesh(new THREE.ConeGeometry(1.0, 3.4, 24), matBody);
+    nose.position.y = 13.4;
+    upper.add(nose);
+
+    var seam = new THREE.Mesh(new THREE.BoxGeometry(0.06, 6.4, 1.9), matDark);
+    seam.position.y = 11.6;
+    upper.add(seam);
+
+    var bell2 = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.68, 1.1, 20, 1, true), matBell);
+    bell2.position.y = 6.15;
+    upper.add(bell2);
+
+    root.add(upper);
+
+    return { root: root, booster: booster, upper: upper };
+  }
+
+  var rocketParts = null;
+  var rocket = null;
+  var diamonds = null;
+  var plumeCore = null;
+  var plumeGlow = null;
+  var plume2 = null;
+
+  /* 喷流主体：两层加性圆锥 —— 内层近白（高温核心），外层橙红（外焰）。
+     长度随推力变化：thrust 越大，排气越猛，焰柱越长。 */
+  function makePlume() {
+    var g = new THREE.Group();
+    g.name = 'plume';
+
+    // 喷口处的高亮光斑
+    var glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: texSoft,
+      color: 0xffd9a0,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.9
+    }));
+    glowSprite.position.y = -1.4;
+    glowSprite.scale.set(4.2, 4.2, 1);
+    g.add(glowSprite);
+
+    var coreGeo = new THREE.ConeGeometry(0.62, 6, 20, 1, true);
+    coreGeo.translate(0, -3, 0);          // 顶点留在原点（喷口），锥体向下张开
+    var coreMat = new THREE.MeshBasicMaterial({
+      color: 0xfff3d0,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    var core = new THREE.Mesh(coreGeo, coreMat);
+    core.position.y = -1.3;
+    g.add(core);
+
+    var glowGeo = new THREE.ConeGeometry(1.15, 11, 20, 1, true);
+    glowGeo.translate(0, -5.5, 0);
+    var glowMat = new THREE.MeshBasicMaterial({
+      color: 0xff9a3c,
+      transparent: true,
+      opacity: 0.30,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    var glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.position.y = -1.3;
+    g.add(glow);
+
+    return { group: g, core: core, glow: glow };
+  }
+
+  function buildRocket() {
+    if (rocket) scene.remove(rocket);
+    rocketParts = makeRocket();
+    rocket = rocketParts.root;
+    rocket.position.set(0, 1.2, 0);
+    scene.add(rocket);
+
+    // 马赫环：沿喷流轴线排布的加性菱形
+    diamonds = new THREE.Group();
+    var baseMat = new THREE.SpriteMaterial({
+      map: texDiamond,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      color: 0xcfe6ff
+    });
+    for (var i = 0; i < 6; i++) {
+      var s = new THREE.Sprite(baseMat.clone());
+      s.position.set(0, -1.5 - i * 1.35, 0);
+      var sc = 0.85 * Math.pow(0.78, i);
+      s.scale.set(sc, sc * 1.6, 1);
+      s.userData.idx = i;
+      diamonds.add(s);
+    }
+    rocket.add(diamonds);
+
+    // 一二级各有一套喷流：分离后各自跟着本体
+    var p1 = makePlume();
+    plumeCore = p1.core;
+    plumeGlow = p1.glow;
+    rocketParts.booster.add(p1.group);
+
+    var p2 = makePlume();
+    p2.group.position.y = -6.4;   // 二级喷口在级间段下方
+    p2.group.scale.setScalar(0.62);
+    p2.core.visible = false;
+    p2.glow.visible = false;
+    plume2 = p2;
+    rocketParts.upper.add(p2.group);
+  }
+
+  /* ---------------- 地面烟云 ---------------- */
+  var smokeAcc = 0;
+  function emitGroundSmoke(dt, intensity) {
+    if (intensity <= 0.02) return;
+    smokeAcc += 46 * intensity * params.density * dt;
+    var n = Math.min(10, Math.floor(smokeAcc));
+    smokeAcc -= n;
+    for (var i = 0; i < n; i++) {
+      var ang = Math.random() * Math.PI * 2;
+      var rad = 1.2 + Math.random() * 3.4;
+      var spd = 6 + Math.random() * 17 * intensity;
+      smokePool.spawn(
+        { x: Math.cos(ang) * rad, y: 0.4 + Math.random() * 1.6, z: Math.sin(ang) * rad },
+        { x: Math.cos(ang) * spd, y: 1.5 + Math.random() * 4.5, z: Math.sin(ang) * spd },
+        {
+          life: 2.2 + Math.random() * 2.8,
+          size: 3.2 + Math.random() * 3.6,
+          grow: 2.7,
+          drag: 0.85,
+          buoy: 0.9,
+          alpha: 0.32,
+          c0: [0.74, 0.72, 0.70],
+          c1: [0.36, 0.37, 0.40]
+        }
+      );
+    }
+  }
+
+  /* ---------------- 主喷流 ---------------- */
+  var hotAcc = 0, plumeAcc = 0, trailAcc = 0;
+  var _nz = null;
+
+  function nozzleWorld(stage2) {
+    if (!_nz) _nz = new THREE.Vector3();
+    _nz.set(0, stage2 ? -7.6 : -1.2, 0);
+    rocket.localToWorld(_nz);
+    return _nz;
+  }
+
+  function emitExhaust(dt, throttle) {
+    var dens = params.density;
+    var s2 = state.phase === 'stage2';
+    var vExit = 95 + 60 * throttle;
+
+    hotAcc += 900 * dens * throttle * dt;
+    var hotN = Math.min(150, Math.floor(hotAcc));
+    hotAcc -= hotN;
+
+    for (var i = 0; i < hotN; i++) {
+      var p = nozzleWorld(s2);
+      var ang = Math.random() * Math.PI * 2;
+      var r = Math.random() * (0.30 + Math.random() * 0.55);
+      hotPool.spawn(
+        { x: p.x + Math.cos(ang) * r, y: p.y + Math.random() * 0.4, z: p.z + Math.sin(ang) * r },
+        {
+          x: Math.cos(ang) * (1.5 + Math.random() * 3.5) + (Math.random() - 0.5) * 2,
+          y: -vExit * (0.55 + Math.random() * 0.7) + state.v,
+          z: Math.sin(ang) * (1.5 + Math.random() * 3.5) + (Math.random() - 0.5) * 2
+        },
+        {
+          life: 0.30 + Math.random() * 0.55,
+          size: 1.5 + Math.random() * 2.1,
+          grow: 1.7,
+          drag: 1.5,
+          alpha: 0.96,
+          c0: [1.0, 0.96, 0.86],
+          c1: [1.0, 0.40, 0.09]
+        }
+      );
+    }
+
+    plumeAcc += 320 * dens * throttle * dt;
+    var smokeN = Math.min(90, Math.floor(plumeAcc));
+    plumeAcc -= smokeN;
+
+    for (var j = 0; j < smokeN; j++) {
+      var p2 = nozzleWorld(s2);
+      var ang2 = Math.random() * Math.PI * 2;
+      var r2 = Math.random() * (1.0 + 0.9 * (1 - throttle));
+      smokePool.spawn(
+        { x: p2.x + Math.cos(ang2) * r2, y: p2.y, z: p2.z + Math.sin(ang2) * r2 },
+        {
+          x: Math.cos(ang2) * (3 + Math.random() * 6),
+          y: -vExit * 0.25 + state.v * 0.85 + (Math.random() - 0.5) * 5,
+          z: Math.sin(ang2) * (3 + Math.random() * 6)
+        },
+        {
+          life: 1.6 + Math.random() * 2.4,
+          size: 2.4 + Math.random() * 2.8,
+          grow: 3.4,
+          drag: 0.7,
+          buoy: 0.6,
+          alpha: 0.20,
+          c0: [0.64, 0.62, 0.60],
+          c1: [0.30, 0.31, 0.34]
+        }
+      );
+    }
+  }
+
+  /* ---------------- 物理 ---------------- */
+  function airDensity(yMeters) {
+    return 1.225 * Math.exp(-Math.max(0, yMeters) / 8500);
+  }
+
+  function currentMass() {
+    var m = MASS.boosterDry + MASS.upperDry;
+    if (state.phase === 'stage2' || state.phase === 'coast' || state.phase === 'ended') {
+      m += Math.max(0, state.prop2);
+    } else {
+      m += Math.max(0, state.prop1) + Math.max(0, state.prop2);
+    }
+    return m;
+  }
+
+  function step(dt) {
+    state.t += dt;
+
+    if (state.phase === 'ignite') {
+      state.thr = Math.min(1, state.t / 0.7);
+      if (state.t > 1.0) state.phase = 'stage1';
+    } else if (state.phase === 'stage2') {
+      // 二级点火后推力爬升到满
+      state.thr = Math.min(1, state.thr + dt * 2.2);
+    }
+
+    var massNow = currentMass();
+
+    var thrustN = 0;
+    if (state.phase === 'ignite' || state.phase === 'stage1') {
+      thrustN = params.thrustKn * 1000 * state.thr;
+      state.prop1 -= params.burnRate * dt * state.thr;
+      if (state.prop1 <= 0) {
+        state.prop1 = 0;
+        if (state.phase === 'stage1') {
+          state.phase = 'sep';
+          doSeparation();
+        }
+      }
+    } else if (state.phase === 'stage2') {
+      thrustN = MASS.thrust2 * state.thr;
+      state.prop2 -= 62 * dt;
+      if (state.prop2 <= 0) { state.prop2 = 0; state.phase = 'coast'; }
+    }
+
+    // a = (T − mg − ½ρCdAv²) / m
+    var yMeters = state.y * UNIT;
+    var rho = airDensity(yMeters);
+    var vMs = state.v * UNIT;
+    var dragN = state.v > 0 ? 0.5 * rho * MASS.cd * MASS.area * vMs * vMs : 0;
+    var weightN = massNow * G;
+
+    var aMs = (thrustN - weightN - dragN) / massNow;
+
+    if (state.y <= 0 && aMs < 0) { aMs = 0; state.v = 0; }
+
+    state.a = aMs;
+    state.v += aMs * dt / UNIT;
+    if (state.v < 0) state.v = 0;
+    state.y += state.v * dt;
+    if (state.a > state.maxAcc) state.maxAcc = state.a;
+
+    rocket.position.y = 1.2 + state.y;
+
+    var throttle = (state.phase === 'ignite' || state.phase === 'stage1' || state.phase === 'stage2') ? state.thr : 0;
+    if (throttle > 0.02) emitExhaust(dt, throttle);
+    emitGroundSmoke(dt, throttle * Math.max(0, 1 - state.y / 42));
+
+    if (diamonds) {
+      var vis = throttle > 0.3 && rho > 0.02;
+      diamonds.visible = vis;
+      if (vis) {
+        diamonds.children.forEach(function (s) {
+          var i = s.userData.idx;
+          var pulse = 0.75 + 0.35 * Math.sin(state.t * 22 + i * 1.7);
+          var sc = 0.9 * Math.pow(0.78, i) * pulse * throttle;
+          s.scale.set(sc, sc * 1.7, 1);
+          s.material.opacity = 0.9 * Math.pow(0.86, i) * throttle * Math.min(1, rho * 2.2);
+        });
+      }
+    }
+
+    engineLight.position.set(rocket.position.x, rocket.position.y - 2.4, rocket.position.z);
+    engineLight.intensity = throttle * (120 + 90 * params.density);
+    engineLight.color.setRGB(1.0, 0.60, 0.28);
+
+    // 喷流：长度与亮度随推力变化，高空中（ρ 小）尾焰张开变长
+    if (plumeCore && plumeGlow) {
+      var expand = 1 + Math.min(1.6, (1 - Math.min(1, rho)) * 1.8);
+      var pv = (state.phase === 'stage2' || state.phase === 'coast') ? 0 : throttle;
+      plumeCore.visible = pv > 0.03;
+      plumeGlow.visible = pv > 0.03;
+      if (pv > 0.03) {
+        var len = (0.55 + 0.75 * pv) * expand;
+        plumeCore.scale.set(0.85 * expand, len, 0.85 * expand);
+        plumeCore.material.opacity = 0.35 + 0.4 * pv;
+        plumeGlow.scale.set(1.0 * expand, len * 1.35, 1.0 * expand);
+        plumeGlow.material.opacity = 0.14 + 0.26 * pv;
+        // 高频抖动，让焰柱有燃烧的"呼吸"
+        var flick = 1 + Math.sin(state.t * 47) * 0.04 + Math.sin(state.t * 91) * 0.02;
+        plumeCore.scale.x *= flick;
+        plumeCore.scale.z *= flick;
+      }
+    }
+
+    // 二级喷流：只在二级点火时可见
+    if (plume2) {
+      var on2 = state.phase === 'stage2' && state.thr > 0.03;
+      plume2.core.visible = on2;
+      plume2.glow.visible = on2;
+      if (on2) {
+        var l2 = 0.6 + 0.9 * state.thr;
+        plume2.core.scale.y = l2;
+        plume2.glow.scale.y = l2 * 1.3;
+        plume2.core.material.opacity = 0.3 + 0.45 * state.thr;
+        plume2.glow.material.opacity = 0.12 + 0.25 * state.thr;
+      }
+    }
+
+    // 尾迹：在高空留下一串逐渐消散的焰粒，形成可见的上升轨迹（熄火后不再喷）
+    trailAcc += dt;
+    if (trailAcc > 0.018 && state.y > 1.2 && throttle > 0.05) {
+      trailAcc = 0;
+      var pn = nozzleWorld(state.phase === 'stage2');
+      hotPool.spawn(
+        { x: pn.x + (Math.random() - 0.5) * 0.6, y: pn.y - 0.6, z: pn.z + (Math.random() - 0.5) * 0.6 },
+        { x: (Math.random() - 0.5) * 1.5, y: -3 + state.v * 0.2, z: (Math.random() - 0.5) * 1.5 },
+        {
+          life: 0.9 + Math.random() * 1.1,
+          size: 1.4 + Math.random() * 1.6,
+          grow: 2.2,
+          drag: 0.55,
+          alpha: 0.30,
+          c0: [1.0, 0.72, 0.36],
+          c1: [0.55, 0.20, 0.08]
+        }
+      );
+    }
+
+    if (state.phase !== 'ended' && state.t > state.autoResetAt) {
+      state.phase = 'ended';
+      state.thr = 0;
+      setTimeout(function () { if (state.phase === 'ended') reset(); }, 1800);
+    }
+  }
+
+  function doSeparation() {
+    if (!rocketParts) return;
+    scene.attach(rocketParts.booster);   // 保持世界变换，作为独立刚体
+    rocketParts.booster.userData.free = {
+      vy: 0.3 * state.v,
+      vz: 2.4 + Math.random(),
+      spin: 0.55 + Math.random() * 0.4,
+      rot: 0
+    };
+    setTimeout(function () {
+      if (state.phase === 'sep') { state.phase = 'stage2'; state.thr = 0.2; }
+    }, 380);
+  }
+
+  function stepBooster(dt) {
+    if (!rocketParts) return;
+    var b = rocketParts.booster;
+    var f = b.userData.free;
+    if (!f) return;
+    f.vy -= 9.81 * dt / UNIT * 1.6;
+    b.position.y += f.vy * dt;
+    b.position.z += f.vz * dt;
+    f.rot += f.spin * dt;
+    b.rotation.z = f.rot;
+    b.rotation.x = f.rot * 0.6;
+    if (b.position.y < 0.2) {
+      b.position.y = 0.2;
+      f.vy = 0;
+      f.vz *= 0.6;
+      f.spin *= 0.4;
+    }
+  }
+
+  /* ---------------- 相机 ---------------- */
+  var camPos = new THREE.Vector3(16, 5, 24);
+  var camLook = new THREE.Vector3(0, 6, 0);
+  var shakeSeed = 0;
+  var _wantPos = new THREE.Vector3(), _wantLook = new THREE.Vector3();
+
+  function updateCamera(dt) {
+    var ry = rocket.position.y;
+    var followY = ry * 0.62;
+    // 机位距离随高度缓慢拉开：低空贴得近（火箭占画面大），高空拉开以容纳尾焰
+    var dist = 22 + ry * 0.075 + Math.min(14, state.v * 0.55);
+
+    _wantPos.set(16 + ry * 0.03, followY + 3.5 + ry * 0.08, dist);
+    _wantLook.set(0, ry + 6, 0);
+
+    camPos.lerp(_wantPos, 1 - Math.pow(0.001, dt));
+    camLook.lerp(_wantLook, 1 - Math.pow(0.002, dt));
+
+    var shake = state.thr * Math.max(0, 1 - ry / 90) * 0.35;
+    shakeSeed += dt * 60;
+    camera.position.copy(camPos);
+    camera.position.x += Math.sin(shakeSeed * 1.7) * shake;
+    camera.position.y += Math.cos(shakeSeed * 2.3) * shake * 0.8;
+    camera.lookAt(camLook);
+
+    var targetFov = 48 + Math.min(18, state.v * 1.4);
+    camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 2);
+    camera.updateProjectionMatrix();
+  }
+
+  /* ---------------- HUD ---------------- */
+  var fpsEl = document.querySelector('#fps b');
+  var phaseEl = document.getElementById('phase');
+  var tAlt = document.getElementById('tAlt');
+  var tVel = document.getElementById('tVel');
+  var tMass = document.getElementById('tMass');
+  var tAcc = document.getElementById('tAcc');
+  var vThrust = document.getElementById('vThrust');
+  var vDens = document.getElementById('vDens');
+  var vBurn = document.getElementById('vBurn');
+
+  var fpsAcc = 0, fpsFrames = 0, hudTimer = 0;
+
+  var PHASE_TEXT = {
+    ignite: '点火', stage1: '一级推进', sep: '级间分离',
+    stage2: '二级推进', coast: '滑行', ended: '完成'
+  };
+
+  function updateHUD(dt) {
+    fpsAcc += dt; fpsFrames++;
+    if (fpsAcc >= 0.35) {
+      fpsEl.textContent = (fpsFrames / fpsAcc).toFixed(0);
+      fpsAcc = 0; fpsFrames = 0;
+    }
+
+    hudTimer += dt;
+    if (hudTimer < 0.08) return;
+    hudTimer = 0;
+
+    phaseEl.textContent = PHASE_TEXT[state.phase] || '';
+    tAlt.textContent = Math.round(state.y * UNIT).toLocaleString('en-US') + ' m';
+    tVel.textContent = Math.round(state.v * UNIT).toLocaleString('en-US') + ' m/s';
+    tMass.textContent = Math.round(currentMass()).toLocaleString('en-US') + ' kg';
+    tAcc.textContent = state.a.toFixed(1) + ' m/s²';
+  }
+
+  /* ---------------- 控件 ---------------- */
+  document.getElementById('thrust').addEventListener('input', function (e) {
+    params.thrustKn = +e.target.value;
+    vThrust.textContent = params.thrustKn + ' kN';
+  });
+  document.getElementById('dens').addEventListener('input', function (e) {
+    params.density = +e.target.value;
+    vDens.textContent = params.density.toFixed(2) + '×';
+  });
+  document.getElementById('burn').addEventListener('input', function (e) {
+    params.burnRate = +e.target.value;
+    vBurn.textContent = params.burnRate + ' kg/s';
+  });
+  document.getElementById('reset').addEventListener('click', reset);
+
+  /* ---------------- 重置 ---------------- */
+  function clearPool(pool) {
+    for (var i = 0; i < pool.max; i++) {
+      pool.life[i] = 0;
+      pool.p[i * 3 + 1] = 1e6;
+    }
+    var arr = pool.geo.attributes.position.array;
+    var al = pool.geo.attributes.aAlpha.array;
+    var sz = pool.geo.attributes.aSize.array;
+    for (var j = 0; j < pool.max; j++) {
+      arr[j * 3] = 0; arr[j * 3 + 1] = 1e6; arr[j * 3 + 2] = 0;
+      al[j] = 0; sz[j] = 0;
+    }
+    pool.geo.attributes.position.needsUpdate = true;
+    pool.geo.attributes.aAlpha.needsUpdate = true;
+    pool.geo.attributes.aSize.needsUpdate = true;
+  }
+
+  function reset() {
+    state.t = 0;
+    state.phase = 'ignite';
+    state.y = 0; state.v = 0; state.a = 0;
+    state.prop1 = MASS.prop1;
+    state.prop2 = MASS.prop2;
+    state.thr = 0;
+    state.maxAcc = 0;
+
+    clearPool(hotPool);
+    clearPool(smokePool);
+
+    if (rocketParts) scene.remove(rocketParts.booster);
+    buildRocket();
+
+    camPos.set(16, 5, 24);
+    camLook.set(0, 6, 0);
+    camera.fov = 48;
+    camera.updateProjectionMatrix();
+  }
+
+  /* ---------------- 循环 ---------------- */
+  var last = performance.now();
+
+  function tick(now) {
+    requestAnimationFrame(tick);
+    var dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+
+    step(dt);
+    stepBooster(dt);
+    hotPool.update(dt);
+    smokePool.update(dt);
+    updateCamera(dt);
+    updateHUD(dt);
+
+    var h = renderer.domElement.height;
+    var scale = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+    hotPool.mat.uniforms.uScale.value = scale * 0.35;
+    smokePool.mat.uniforms.uScale.value = scale * 0.35;
+
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener('resize', function () {
+    var w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  });
+
+  /* ---------------- 启动 ---------------- */
+  buildRocket();
+
+  // 开场先铺一层地面烟，避免第一秒的空白感
+  for (var i = 0; i < 40; i++) {
+    var a = Math.random() * Math.PI * 2, r = 1.5 + Math.random() * 4;
+    smokePool.spawn(
+      { x: Math.cos(a) * r, y: 0.6 + Math.random(), z: Math.sin(a) * r },
+      { x: Math.cos(a) * 5, y: 1.5 + Math.random() * 3, z: Math.sin(a) * 5 },
+      { life: 2.5, size: 3.5, grow: 2.4, drag: 0.9, buoy: 0.6, alpha: 0.24,
+        c0: [0.72, 0.70, 0.68], c1: [0.36, 0.36, 0.38] }
+    );
+  }
+
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

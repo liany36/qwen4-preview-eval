@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>平面图 → 三维房间 · 家具摆放与导出</title>
+<style>
+  :root { --bg:#f4f3ef; --panel:#ffffff; --line:#dedbd3; --ink:#24231f; --muted:#7a776f; --accent:#2f6fde; --warn:#d0442c; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color:var(--ink); background:var(--bg); }
+  #app { display:grid; grid-template-columns: 240px 1fr; grid-template-rows: auto 1fr; height:100%; }
+  header { grid-column: 1 / 3; display:flex; align-items:center; gap:16px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  #dims { font-size:18px; font-weight:700; font-variant-numeric: tabular-nums; }
+  #planInfo { color:var(--muted); font-size:12px; }
+  header .spacer { flex:1; }
+  button, .btn { font:inherit; font-size:13px; padding:6px 12px; border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer; color:var(--ink); }
+  button:hover, .btn:hover { border-color:#bbb; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:12px; overflow:auto; display:flex; flex-direction:column; gap:14px; }
+  aside h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 6px; }
+  .item { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:8px; cursor:grab; user-select:none; background:#fcfbf9; }
+  .item:hover { border-color:var(--accent); }
+  .item svg { flex:none; }
+  .item small { display:block; color:var(--muted); font-size:11px; }
+  .hint { font-size:12px; color:var(--muted); line-height:1.6; }
+  .hint kbd { font-family:inherit; font-size:11px; border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 4px; background:#fff; }
+  #viewport { position:relative; overflow:hidden; }
+  #viewport canvas { display:block; }
+  #banner { position:absolute; left:12px; right:12px; top:12px; background:#fff6d6; border:1px solid #e8d28a; color:#5a4a10; padding:8px 12px; border-radius:8px; font-size:12px; display:none; z-index:5; }
+  #status { position:absolute; left:12px; bottom:12px; background:rgba(255,255,255,.92); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:12px; max-width:420px; z-index:4; }
+  #status .warn { color:var(--warn); }
+  #selInfo { font-variant-numeric: tabular-nums; }
+  #dropHint { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(47,111,222,.08); border:3px dashed var(--accent); font-size:18px; color:var(--accent); z-index:6; pointer-events:none; }
+  dialog { border:1px solid var(--line); border-radius:10px; padding:0; width:min(440px, 92vw); }
+  dialog .body { padding:16px 18px; }
+  dialog h3 { margin:0 0 8px; font-size:16px; }
+  dialog ul { max-height:260px; overflow:auto; margin:8px 0; padding-left:18px; font-size:13px; line-height:1.6; }
+  dialog .row { display:flex; justify-content:flex-end; gap:8px; padding:12px 18px; border-top:1px solid var(--line); background:#faf9f6; }
+  label.chk { font-size:13px; display:flex; gap:6px; align-items:center; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>平面图 → 三维房间</h1>
+    <span id="dims">读取图纸中…</span>
+    <span id="planInfo"></span>
+    <span class="spacer"></span>
+    <label class="chk"><input type="checkbox" id="snap" checked> 吸附 10 cm 网格</label>
+    <label class="chk" title="仅影响显示，导出始终是 2.8 m 全高墙"><input type="checkbox" id="cutaway"> 矮墙视图</label>
+    <label class="btn" for="fileInput">载入图纸…</label>
+    <input type="file" id="fileInput" accept=".svg,image/svg+xml" hidden>
+    <button id="resetBtn" title="清除所有家具，回到刚导入图纸的状态">撤销全部</button>
+    <button id="glbBtn" class="primary">导出 GLB</button>
+    <button id="objBtn" class="primary">导出 OBJ + MTL</button>
+  </header>
+  <aside>
+    <div>
+      <h2>家具（拖进场景）</h2>
+      <div id="palette"></div>
+    </div>
+    <div class="hint">
+      <b>操作</b><br>
+      拖动左侧家具到地面放置（也可单击直接放到房间中央）<br>
+      在场景里按住家具拖动改位置<br>
+      选中后 <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 移动 10 cm（按视角方向）<br>
+      <kbd>R</kbd> 旋转 15°，<kbd>Shift</kbd>+<kbd>R</kbd> 反向<br>
+      <kbd>Delete</kbd> 删除，<kbd>Esc</kbd> 取消选中<br>
+      空白处拖动旋转视角，滚轮缩放，右键平移<br>
+      把 .svg 文件拖进窗口即可换图纸
+    </div>
+  </aside>
+  <div id="viewport">
+    <div id="banner"></div>
+    <div id="dropHint">松手载入这张平面图</div>
+    <div id="status"><div id="selInfo">未选中家具</div><div id="warnings"></div></div>
+  </div>
+</div>
+
+<dialog id="exportDlg">
+  <div class="body">
+    <h3 id="exportTitle">导出</h3>
+    <div id="exportSummary"></div>
+    <ul id="exportList"></ul>
+  </div>
+  <div class="row">
+    <button id="exportCancel">取消</button>
+    <button id="exportOk" class="primary">确认导出</button>
+  </div>
+</dialog>
+
+<!-- 仅在直接双击本地文件打开时使用：浏览器禁止页面读取同目录文件，此时退回这份内嵌副本（内容与 floorplan.svg 相同）。 -->
+<script type="text/plain" id="embeddedPlan">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <desc>Office floor plan. 100 SVG units = 1 metre. Outer envelope 6.00 m x 4.00 m (x:100-700, y:100-500).</desc>
+  <rect x="0" y="0" width="800" height="600" fill="#f7f6f3"/>
+  <g class="walls" stroke="#333" stroke-width="4" stroke-linecap="square">
+    <line class="wall" x1="100" y1="100" x2="380" y2="100"/>
+    <line class="wall" x1="460" y1="100" x2="700" y2="100"/>
+    <line class="wall" x1="700" y1="100" x2="700" y2="500"/>
+    <line class="wall" x1="700" y1="500" x2="560" y2="500"/>
+    <line class="wall" x1="480" y1="500" x2="100" y2="500"/>
+    <line class="wall" x1="100" y1="500" x2="100" y2="100"/>
+    <line class="wall" x1="400" y1="100" x2="400" y2="240"/>
+    <line class="wall" x1="400" y1="320" x2="400" y2="500"/>
+    <line class="wall" x1="400" y1="320" x2="560" y2="320"/>
+  </g>
+  <g class="doors" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4">
+    <line class="door" x1="380" y1="100" x2="460" y2="100"/>
+    <line class="door" x1="480" y1="500" x2="560" y2="500"/>
+    <line class="door" x1="400" y1="240" x2="400" y2="320"/>
+  </g>
+  <g class="windows" stroke="#3d8ec9" stroke-width="6">
+    <line class="window" x1="560" y1="100" x2="680" y2="100"/>
+    <line class="window" x1="700" y1="220" x2="700" y2="340"/>
+    <line class="window" x1="100" y1="180" x2="100" y2="300"/>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#7a7a7a">
+    <text x="230" y="300">办公区</text>
+    <text x="520" y="200">会议室</text>
+    <text x="450" y="430">储物间</text>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#9a9a9a">
+    <text x="100" y="545">1 unit = 1 cm  ·  envelope 6.00 m x 4.00 m</text>
+  </g>
+</svg>
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+const UNITS_PER_M = 100;
+const WALL_H = 2.8, WALL_T = 0.1;
+const WIN_BOTTOM = 0.9, WIN_TOP = 2.2, WIN_T = 0.13;
+const GRID = 0.1;
+const NUDGE = 0.1;
+const ROT_STEP = THREE.MathUtils.degToRad(15);
+
+const $ = (id) => document.getElementById(id);
+const viewport = $('viewport');
+
+// ---------- three.js setup ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+viewport.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xeceae4);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xc9c2b5, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun, sun.target);
+
+// exportRoot holds everything that goes into the files; helpers never do.
+const exportRoot = new THREE.Group(); exportRoot.name = 'room';
+const structure = new THREE.Group(); structure.name = 'structure';
+const furnitureRoot = new THREE.Group(); furnitureRoot.name = 'furniture';
+exportRoot.add(structure, furnitureRoot);
+scene.add(exportRoot);
+const helpers = new THREE.Group(); helpers.name = 'helpers';
+scene.add(helpers);
+
+const mats = {
+  floor:   new THREE.MeshStandardMaterial({ name: 'floor',   color: 0xd9cdb8, roughness: 0.9 }),
+  wall:    new THREE.MeshStandardMaterial({ name: 'wall',    color: 0xf2f0eb, roughness: 0.85 }),
+  window:  new THREE.MeshStandardMaterial({ name: 'window_glass', color: 0x4aa3e8, transparent: true, opacity: 0.45, roughness: 0.1, depthWrite: false }),
+  wood:    new THREE.MeshStandardMaterial({ name: 'wood',    color: 0xa87a4f, roughness: 0.6 }),
+  metal:   new THREE.MeshStandardMaterial({ name: 'metal',   color: 0x55585e, roughness: 0.4, metalness: 0.6 }),
+  fabric:  new THREE.MeshStandardMaterial({ name: 'fabric',  color: 0x3f6f8f, roughness: 0.95 }),
+  cabinet: new THREE.MeshStandardMaterial({ name: 'cabinet', color: 0xe6e1d6, roughness: 0.7 }),
+  handle:  new THREE.MeshStandardMaterial({ name: 'handle',  color: 0x2b2b2b, roughness: 0.3, metalness: 0.8 }),
+};
+
+// ---------- SVG parsing ----------
+function num(el, a) { const v = parseFloat(el.getAttribute(a)); return Number.isFinite(v) ? v : 0; }
+function segmentsOf(el) {
+  const tag = el.localName;
+  if (tag === 'line') return [{ x1: num(el,'x1'), y1: num(el,'y1'), x2: num(el,'x2'), y2: num(el,'y2') }];
+  if (tag === 'rect') {
+    const x = num(el,'x'), y = num(el,'y'), w = num(el,'width'), h = num(el,'height');
+    return [[x,y,x+w,y],[x+w,y,x+w,y+h],[x+w,y+h,x,y+h],[x,y+h,x,y]].map(([x1,y1,x2,y2]) => ({x1,y1,x2,y2}));
+  }
+  if (tag === 'polyline' || tag === 'polygon') {
+    const p = (el.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number);
+    const out = [];
+    for (let i = 0; i + 3 < p.length; i += 2) out.push({ x1:p[i], y1:p[i+1], x2:p[i+2], y2:p[i+3] });
+    if (tag === 'polygon' && p.length >= 6) out.push({ x1:p[p.length-2], y1:p[p.length-1], x2:p[0], y2:p[1] });
+    return out;
+  }
+  return [];
+}
+function byClass(doc, cls) {
+  const out = [];
+  for (const el of doc.querySelectorAll(`[class~="${cls}"]`)) out.push(...segmentsOf(el));
+  return out.filter(s => Math.hypot(s.x2 - s.x1, s.y2 - s.y1) > 0.5);
+}
+
+// Removes the parts of a wall segment that are covered by a collinear door segment.
+function subtractDoors(wall, doors) {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, L = Math.hypot(dx, dy);
+  const ux = dx / L, uy = dy / L;
+  const tol = 2;
+  let pieces = [[0, L]];
+  for (const d of doors) {
+    const dist = (x, y) => Math.abs((x - wall.x1) * uy - (y - wall.y1) * ux);
+    if (dist(d.x1, d.y1) > tol || dist(d.x2, d.y2) > tol) continue;
+    let a = (d.x1 - wall.x1) * ux + (d.y1 - wall.y1) * uy;
+    let b = (d.x2 - wall.x1) * ux + (d.y2 - wall.y1) * uy;
+    if (a > b) [a, b] = [b, a];
+    const next = [];
+    for (const [s, e] of pieces) {
+      if (b <= s || a >= e) { next.push([s, e]); continue; }
+      if (a > s) next.push([s, a]);
+      if (b < e) next.push([b, e]);
+    }
+    pieces = next;
+  }
+  return pieces.filter(([s, e]) => e - s > 1).map(([s, e]) => ({
+    x1: wall.x1 + ux * s, y1: wall.y1 + uy * s, x2: wall.x1 + ux * e, y2: wall.y1 + uy * e,
+  }));
+}
+
+function parsePlan(text) {
+  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+  if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') throw new Error('不是有效的 SVG 文件');
+  const rawWalls = byClass(doc, 'wall');
+  const doors = byClass(doc, 'door');
+  const windows = byClass(doc, 'window');
+  if (!rawWalls.length) throw new Error('图纸里没有找到 class="wall" 的元素');
+  const walls = rawWalls.flatMap(w => subtractDoors(w, doors));
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of [...rawWalls, ...doors]) {
+    minX = Math.min(minX, s.x1, s.x2); maxX = Math.max(maxX, s.x1, s.x2);
+    minY = Math.min(minY, s.y1, s.y2); maxY = Math.max(maxY, s.y1, s.y2);
+  }
+  const rooms = [];
+  for (const t of doc.querySelectorAll('text')) {
+    const x = num(t, 'x'), y = num(t, 'y'), name = t.textContent.trim();
+    if (name && x > minX && x < maxX && y > minY && y < maxY) rooms.push({ name, x, y });
+  }
+  return { walls, rawWallCount: rawWalls.length, doors, windows, rooms, minX, minY, maxX, maxY,
+           widthM: (maxX - minX) / UNITS_PER_M, depthM: (maxY - minY) / UNITS_PER_M };
+}
+
+// ---------- building geometry ----------
+let plan = null;
+let wallSegs = [];   // world-space wall segments for collision
+const toWorld = (x, y) => new THREE.Vector2(
+  (x - (plan.minX + plan.maxX) / 2) / UNITS_PER_M,
+  (y - (plan.minY + plan.maxY) / 2) / UNITS_PER_M);
+
+function disposeChildren(g) {
+  for (const c of [...g.children]) { g.remove(c); c.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); } }); }
+}
+
+function segMesh(s, h, t, yCenter, mat, name) {
+  const a = toWorld(s.x1, s.y1), b = toWorld(s.x2, s.y2);
+  const len = a.distanceTo(b);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(len, h, t), mat);
+  m.position.set((a.x + b.x) / 2, yCenter, (a.y + b.y) / 2);
+  m.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
+  m.name = name;
+  return { mesh: m, a, b };
+}
+
+function roomLabel(name, pos) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 96;
+  const g = c.getContext('2d');
+  g.font = '600 44px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  g.fillStyle = 'rgba(60,55,45,0.55)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(name, 128, 48);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.375), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.005, pos.y);
+  return m;
+}
+
+function buildRoom(p, sourceLabel) {
+  plan = p;
+  clearFurniture();
+  disposeChildren(structure); disposeChildren(helpers);
+  wallSegs = [];
+  const W = p.widthM, D = p.depthM;
+
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(W, 0.02, D), mats.floor);
+  floor.position.y = -0.01; floor.name = 'floor'; floor.receiveShadow = true;
+  structure.add(floor);
+
+  p.walls.forEach((s, i) => {
+    const { mesh, a, b } = segMesh(s, WALL_H, WALL_T, WALL_H / 2, mats.wall, `wall_${String(i + 1).padStart(2, '0')}`);
+    mesh.castShadow = mesh.receiveShadow = true;
+    structure.add(mesh);
+    wallSegs.push({ a, b, name: mesh.name });
+  });
+  p.windows.forEach((s, i) => {
+    const h = WIN_TOP - WIN_BOTTOM;
+    const { mesh } = segMesh(s, h, WIN_T, WIN_BOTTOM + h / 2, mats.window, `window_${String(i + 1).padStart(2, '0')}`);
+    mesh.renderOrder = 2;
+    structure.add(mesh);
+  });
+
+  const grid = new THREE.GridHelper(Math.ceil(Math.max(W, D)) + 2, (Math.ceil(Math.max(W, D)) + 2) * 2, 0xb8b2a6, 0xd6d1c7);
+  grid.position.y = 0.002; grid.material.transparent = true; grid.material.opacity = 0.5;
+  helpers.add(grid);
+  for (const r of p.rooms) helpers.add(roomLabel(r.name, toWorld(r.x, r.y)));
+
+  sun.position.set(W * 0.6, 8, D * 0.9);
+  const sc = sun.shadow.camera; const ext = Math.max(W, D);
+  sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.updateProjectionMatrix();
+
+  $('dims').textContent = `总宽 ${W.toFixed(2)} m × 总深 ${D.toFixed(2)} m`;
+  $('planInfo').textContent = `${sourceLabel} · 墙 ${p.walls.length} 段 · 门洞 ${p.doors.length} · 窗 ${p.windows.length} · 房间 ${p.rooms.map(r => r.name).join(' / ') || '—'}`;
+  setCutaway($('cutaway').checked);
+  resetCamera();
+  updateWarnings();
+}
+
+function resetCamera() {
+  const ext = Math.max(plan.widthM, plan.depthM);
+  camera.position.set(ext * 0.1, ext * 1.4, ext * 0.8);
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+
+// ---------- furniture ----------
+function part(geo, mat, x, y, z, name) {
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.name = name;
+  m.castShadow = true; m.receiveShadow = true; return m;
+}
+const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+
+const CATALOG = {
+  desk: { label: '办公桌', size: '120 × 60 × 75 cm', build(g, n) {
+    g.add(part(box(1.2, 0.04, 0.6), mats.wood, 0, 0.73, 0, `${n}_top`));
+    let i = 0;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1])
+      g.add(part(box(0.05, 0.71, 0.05), mats.metal, sx * 0.55, 0.355, sz * 0.25, `${n}_leg${++i}`));
+    g.add(part(box(1.0, 0.25, 0.015), mats.metal, 0, 0.55, -0.27, `${n}_modesty`));
+  }},
+  chair: { label: '椅子', size: '46 × 46 × 92 cm', build(g, n) {
+    g.add(part(box(0.46, 0.06, 0.46), mats.fabric, 0, 0.46, 0, `${n}_seat`));
+    g.add(part(box(0.46, 0.42, 0.05), mats.fabric, 0, 0.71, -0.205, `${n}_back`));
+    let i = 0;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1])
+      g.add(part(box(0.035, 0.43, 0.035), mats.metal, sx * 0.2, 0.215, sz * 0.2, `${n}_leg${++i}`));
+  }},
+  cabinet: { label: '文件柜', size: '80 × 40 × 180 cm', build(g, n) {
+    g.add(part(box(0.8, 0.06, 0.38), mats.metal, 0, 0.03, 0, `${n}_plinth`));
+    g.add(part(box(0.8, 1.74, 0.4), mats.cabinet, 0, 0.93, 0, `${n}_body`));
+    g.add(part(box(0.006, 1.66, 0.006), mats.handle, 0, 0.93, 0.201, `${n}_seam`));
+    g.add(part(box(0.02, 0.18, 0.025), mats.handle, -0.04, 1.0, 0.21, `${n}_handleL`));
+    g.add(part(box(0.02, 0.18, 0.025), mats.handle, 0.04, 1.0, 0.21, `${n}_handleR`));
+  }},
+  meetingTable: { label: '会议桌', size: '180 × 90 × 75 cm', build(g, n) {
+    g.add(part(new THREE.CylinderGeometry(0.45, 0.45, 0.04, 32), mats.wood, -0.45, 0.73, 0, `${n}_endL`));
+    g.add(part(new THREE.CylinderGeometry(0.45, 0.45, 0.04, 32), mats.wood, 0.45, 0.73, 0, `${n}_endR`));
+    g.add(part(box(0.9, 0.04, 0.9), mats.wood, 0, 0.73, 0, `${n}_top`));
+    g.add(part(box(0.12, 0.71, 0.12), mats.metal, -0.45, 0.355, 0, `${n}_baseL`));
+    g.add(part(box(0.12, 0.71, 0.12), mats.metal, 0.45, 0.355, 0, `${n}_baseR`));
+  }},
+};
+const ICONS = {
+  desk: '<rect x="3" y="9" width="26" height="4" rx="1" fill="#a87a4f"/><rect x="5" y="13" width="3" height="12" fill="#55585e"/><rect x="24" y="13" width="3" height="12" fill="#55585e"/>',
+  chair: '<rect x="9" y="4" width="14" height="10" rx="2" fill="#3f6f8f"/><rect x="8" y="15" width="16" height="4" rx="1" fill="#3f6f8f"/><rect x="9" y="19" width="2" height="9" fill="#55585e"/><rect x="21" y="19" width="2" height="9" fill="#55585e"/>',
+  cabinet: '<rect x="8" y="3" width="16" height="26" rx="1" fill="#e6e1d6" stroke="#999"/><line x1="16" y1="4" x2="16" y2="28" stroke="#666"/><rect x="14" y="13" width="1" height="4" fill="#333"/><rect x="17" y="13" width="1" height="4" fill="#333"/>',
+  meetingTable: '<rect x="4" y="11" width="24" height="10" rx="5" fill="#a87a4f"/>',
+};
+
+const furniture = [];
+const counters = {};
+let selected = null;
+
+function makeFurniture(type) {
+  counters[type] = (counters[type] || 0) + 1;
+  const g = new THREE.Group();
+  g.name = `${type}_${String(counters[type]).padStart(2, '0')}`;
+  CATALOG[type].build(g, g.name);
+  g.userData = { furniture: true, type };
+  return g;
+}
+
+function snapV(v) { return $('snap').checked ? Math.round(v / GRID) * GRID : v; }
+
+function addFurniture(type, x = 0, z = 0, rotDeg = 0) {
+  if (!CATALOG[type]) throw new Error('unknown furniture type ' + type);
+  const g = makeFurniture(type);
+  g.position.set(snapV(x), 0, snapV(z));
+  g.rotation.y = THREE.MathUtils.degToRad(rotDeg);
+  furnitureRoot.add(g);
+  const helper = new THREE.BoxHelper(g, 0x2f6fde); helper.visible = false; helpers.add(helper);
+  g.userData.helper = helper;
+  furniture.push(g);
+  select(g);
+  updateWarnings();
+  return g;
+}
+
+function removeFurniture(g) {
+  furnitureRoot.remove(g); helpers.remove(g.userData.helper);
+  g.traverse(o => o.geometry && o.geometry.dispose());
+  furniture.splice(furniture.indexOf(g), 1);
+  if (selected === g) select(null);
+  updateWarnings();
+}
+
+function clearFurniture() {
+  for (const g of [...furniture]) removeFurniture(g);
+  for (const k in counters) delete counters[k];
+  select(null);
+}
+
+function select(g) {
+  selected = g;
+  for (const f of furniture) f.userData.helper.visible = false;
+  refreshHelpers();
+  updateSelInfo();
+}
+
+function updateSelInfo() {
+  const el = $('selInfo');
+  if (!selected) { el.textContent = `未选中家具 · 场景中共 ${furniture.length} 件`; return; }
+  const p = selected.position;
+  const deg = ((THREE.MathUtils.radToDeg(selected.rotation.y) % 360) + 360) % 360;
+  el.textContent = `已选中 ${CATALOG[selected.userData.type].label}（${selected.name}） · x ${p.x.toFixed(2)} m, z ${p.z.toFixed(2)} m · 朝向 ${deg.toFixed(0)}° · 共 ${furniture.length} 件`;
+}
+
+// ---------- collision hints (warn, never block) ----------
+function footprint(g) {
+  g.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(g);
+  return { minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z };
+}
+function segHitsRect(a, b, r) {
+  // Liang–Barsky clip of segment a→b against rect r.
+  let t0 = 0, t1 = 1; const dx = b.x - a.x, dz = b.y - a.y;
+  const pq = [[-dx, a.x - r.minX], [dx, r.maxX - a.x], [-dz, a.y - r.minZ], [dz, r.maxZ - a.y]];
+  for (const [p, q] of pq) {
+    if (p === 0) { if (q < 0) return false; continue; }
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+const STACK_OK = new Set(['chair|desk', 'desk|chair', 'chair|meetingTable', 'meetingTable|chair']);
+function updateWarnings() {
+  const msgs = []; const bad = new Set();
+  const fps = furniture.map(footprint);
+  const halfW = plan ? plan.widthM / 2 : 0, halfD = plan ? plan.depthM / 2 : 0;
+  furniture.forEach((g, i) => {
+    const r = fps[i], lab = `${CATALOG[g.userData.type].label} ${g.name.split('_').pop()}`;
+    const shrunk = { minX: r.minX - WALL_T / 2 + 0.005, maxX: r.maxX + WALL_T / 2 - 0.005, minZ: r.minZ - WALL_T / 2 + 0.005, maxZ: r.maxZ + WALL_T / 2 - 0.005 };
+    const hit = wallSegs.find(w => segHitsRect(w.a, w.b, shrunk));
+    if (hit) { msgs.push(`${lab} 穿墙（${hit.name}）`); bad.add(g); }
+    else if (r.minX < -halfW || r.maxX > halfW || r.minZ < -halfD || r.maxZ > halfD) { msgs.push(`${lab} 在房间外`); bad.add(g); }
+    for (let j = i + 1; j < furniture.length; j++) {
+      const s = fps[j], h = furniture[j];
+      if (STACK_OK.has(`${g.userData.type}|${h.userData.type}`)) continue;
+      const e = 0.01;
+      if (r.minX < s.maxX - e && r.maxX > s.minX + e && r.minZ < s.maxZ - e && r.maxZ > s.minZ + e) {
+        msgs.push(`${lab} 与 ${CATALOG[h.userData.type].label} ${h.name.split('_').pop()} 叠在一起`); bad.add(g); bad.add(h);
+      }
+    }
+  });
+  for (const f of furniture) f.userData.bad = bad.has(f);
+  $('warnings').innerHTML = msgs.map(m => `<div class="warn">⚠ ${m}</div>`).join('');
+  refreshHelpers();
+  updateSelInfo();
+}
+function refreshHelpers() {
+  for (const f of furniture) {
+    const h = f.userData.helper;
+    h.visible = f === selected || f.userData.bad;
+    h.material.color.set(f.userData.bad ? 0xd0442c : 0x2f6fde);
+    h.update();
+  }
+}
+
+// ---------- palette & drag-in ----------
+let dragType = null, ghost = null;
+for (const [type, def] of Object.entries(CATALOG)) {
+  const el = document.createElement('div');
+  el.className = 'item'; el.draggable = true; el.dataset.type = type;
+  el.innerHTML = `<svg width="32" height="32" viewBox="0 0 32 32">${ICONS[type]}</svg><div>${def.label}<small>${def.size}</small></div>`;
+  el.addEventListener('dragstart', (e) => { dragType = type; e.dataTransfer.setData('text/plain', type); e.dataTransfer.effectAllowed = 'copy'; });
+  el.addEventListener('dragend', () => { dragType = null; removeGhost(); });
+  el.addEventListener('click', () => addFurniture(type, 0, 0));
+  $('palette').appendChild(el);
+}
+function removeGhost() { if (ghost) { scene.remove(ghost); ghost = null; } }
+
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function setNdc(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+}
+function groundAt(e) { setNdc(e); const p = new THREE.Vector3(); return raycaster.ray.intersectPlane(groundPlane, p) ? p : null; }
+
+const isSvgFileDrag = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+viewport.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  if (isSvgFileDrag(e)) { $('dropHint').style.display = 'flex'; return; }
+  if (!dragType) return;
+  e.dataTransfer.dropEffect = 'copy';
+  const p = groundAt(e); if (!p) return;
+  if (!ghost || ghost.userData.type !== dragType) {
+    removeGhost();
+    ghost = new THREE.Group(); CATALOG[dragType].build(ghost, 'ghost'); ghost.userData.type = dragType;
+    ghost.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.5; } });
+    scene.add(ghost);
+  }
+  ghost.position.set(snapV(p.x), 0, snapV(p.z));
+});
+viewport.addEventListener('dragleave', (e) => { if (e.target === viewport || e.target === renderer.domElement) { removeGhost(); $('dropHint').style.display = 'none'; } });
+viewport.addEventListener('drop', (e) => {
+  e.preventDefault(); $('dropHint').style.display = 'none';
+  if (e.dataTransfer.files && e.dataTransfer.files.length) { loadFile(e.dataTransfer.files[0]); return; }
+  const type = dragType || e.dataTransfer.getData('text/plain');
+  removeGhost();
+  if (!CATALOG[type]) return;
+  const p = groundAt(e); if (!p) return;
+  addFurniture(type, p.x, p.z);
+  dragType = null;
+});
+// Allow dropping an SVG anywhere on the page, not only on the canvas.
+document.addEventListener('dragover', (e) => { if (isSvgFileDrag(e)) e.preventDefault(); });
+document.addEventListener('drop', (e) => { if (isSvgFileDrag(e)) { e.preventDefault(); loadFile(e.dataTransfer.files[0]); } });
+
+// ---------- move placed furniture ----------
+let dragging = null; const dragOffset = new THREE.Vector3(); let downAt = null;
+function furnitureUnder(e) {
+  setNdc(e);
+  const hits = raycaster.intersectObjects(furniture, true);
+  if (!hits.length) return null;
+  let o = hits[0].object; while (o && !o.userData.furniture) o = o.parent;
+  return o;
+}
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  downAt = { x: e.clientX, y: e.clientY };
+  const g = furnitureUnder(e);
+  if (!g) return;
+  select(g);
+  const p = groundAt(e); if (!p) return;
+  dragging = g; dragOffset.copy(p).sub(g.position);
+  controls.enabled = false;
+  try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
+});
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!dragging) { renderer.domElement.style.cursor = furnitureUnder(e) ? 'grab' : 'default'; return; }
+  const p = groundAt(e); if (!p) return;
+  dragging.position.x = snapV(p.x - dragOffset.x);
+  dragging.position.z = snapV(p.z - dragOffset.z);
+  renderer.domElement.style.cursor = 'grabbing';
+  updateWarnings();
+});
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (dragging) { dragging = null; controls.enabled = true; updateWarnings(); return; }
+  if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 4 && !furnitureUnder(e)) select(null);
+  downAt = null;
+});
+
+// ---------- keyboard ----------
+function cameraAxes() {
+  const f = new THREE.Vector3(); camera.getWorldDirection(f); f.y = 0;
+  // snap to the dominant world axis so 10 cm steps stay on-grid
+  const fwd = Math.abs(f.x) > Math.abs(f.z) ? new THREE.Vector3(Math.sign(f.x), 0, 0) : new THREE.Vector3(0, 0, Math.sign(f.z) || -1);
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  return { fwd, right };
+}
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest && e.target.closest('input, textarea, dialog')) return;
+  if (!selected) return;
+  const { fwd, right } = cameraAxes();
+  let d = null;
+  if (e.key === 'ArrowUp') d = fwd;
+  else if (e.key === 'ArrowDown') d = fwd.clone().negate();
+  else if (e.key === 'ArrowRight') d = right;
+  else if (e.key === 'ArrowLeft') d = right.clone().negate();
+  if (d) {
+    e.preventDefault();
+    selected.position.x = Math.round((selected.position.x + d.x * NUDGE) * 1000) / 1000;
+    selected.position.z = Math.round((selected.position.z + d.z * NUDGE) * 1000) / 1000;
+    updateWarnings(); return;
+  }
+  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); selected.rotation.y += (e.shiftKey ? -1 : 1) * ROT_STEP; updateWarnings(); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeFurniture(selected); return; }
+  if (e.key === 'Escape') select(null);
+});
+
+// ---------- export ----------
+function exportManifest() {
+  const walls = structure.children.filter(o => o.name.startsWith('wall_')).length;
+  const wins = structure.children.filter(o => o.name.startsWith('window_')).length;
+  const items = [`地面 floor ×1`, `墙体 wall_* ×${walls}`, `窗 window_* ×${wins}`,
+    ...furniture.map(f => `${CATALOG[f.userData.type].label} ${f.name}  (x ${f.position.x.toFixed(2)}, z ${f.position.z.toFixed(2)}, ${Math.round(THREE.MathUtils.radToDeg(f.rotation.y))}°)`)];
+  return { count: 1 + walls + wins + furniture.length, items };
+}
+
+function setCutaway(on) {
+  for (const o of structure.children) {
+    if (o.name.startsWith('wall_')) { o.scale.y = on ? 0.35 : 1; o.position.y = WALL_H * o.scale.y / 2; }
+    if (o.name.startsWith('window_')) o.visible = !on;
+  }
+  exportRoot.updateMatrixWorld(true);
+}
+function withFullWalls(fn) {
+  setCutaway(false);
+  try { return fn(); } finally { setCutaway($('cutaway').checked); }
+}
+$('cutaway').addEventListener('change', (e) => setCutaway(e.target.checked));
+
+function exportGLB() {
+  setCutaway(false);
+  return new Promise((resolve, reject) => new GLTFExporter().parse(exportRoot, resolve, reject, { binary: true }))
+    .finally(() => setCutaway($('cutaway').checked));
+}
+
+function exportOBJ(mtlName = 'out.mtl') { return withFullWalls(() => exportOBJRaw(mtlName)); }
+function exportOBJRaw(mtlName) {
+  exportRoot.updateMatrixWorld(true);
+  const lines = ['# Floorplan room export (Y up, metres, right-handed)', `mtllib ${mtlName}`];
+  const mtl = ['# Materials for out.obj'];
+  const names = new Map();
+  let vBase = 1;
+  const v = new THREE.Vector3(), nm = new THREE.Matrix3(), c = new THREE.Color();
+  const f4 = (x) => (Math.abs(x) < 1e-7 ? 0 : x).toFixed(5);
+  exportRoot.traverse((o) => {
+    if (!o.isMesh) return;
+    const mat = o.material;
+    if (!names.has(mat)) {
+      const n = (mat.name || `mat${names.size}`).replace(/\W+/g, '_');
+      names.set(mat, n);
+      mat.color.getRGB(c, THREE.SRGBColorSpace);
+      const op = mat.transparent ? mat.opacity : 1;
+      mtl.push('', `newmtl ${n}`, 'Ka 0 0 0', `Kd ${c.r.toFixed(4)} ${c.g.toFixed(4)} ${c.b.toFixed(4)}`, 'Ks 0.05 0.05 0.05', 'Ns 20', `d ${op.toFixed(3)}`, `Tr ${(1 - op).toFixed(3)}`, `illum ${op < 1 ? 4 : 2}`);
+    }
+    const g = o.geometry, pos = g.attributes.position, nor = g.attributes.normal;
+    const owner = o.parent && o.parent.userData.furniture ? o.parent.name + '/' : '';
+    lines.push('o ' + (owner + o.name).replace(/\s+/g, '_'), `usemtl ${names.get(mat)}`);
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld); lines.push(`v ${f4(v.x)} ${f4(v.y)} ${f4(v.z)}`); }
+    nm.getNormalMatrix(o.matrixWorld);
+    for (let i = 0; i < nor.count; i++) { v.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize(); lines.push(`vn ${f4(v.x)} ${f4(v.y)} ${f4(v.z)}`); }
+    const idx = g.index ? g.index.array : [...Array(pos.count).keys()];
+    for (let i = 0; i < idx.length; i += 3) {
+      const a = idx[i] + vBase, b = idx[i + 1] + vBase, d = idx[i + 2] + vBase;
+      lines.push(`f ${a}//${a} ${b}//${b} ${d}//${d}`);
+    }
+    vBase += pos.count;
+  });
+  return { obj: lines.join('\n') + '\n', mtl: mtl.join('\n') + '\n' };
+}
+
+function download(data, name, mime) {
+  const url = URL.createObjectURL(new Blob([data], { type: mime }));
+  const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+let pendingExport = null;
+function openExport(kind) {
+  const m = exportManifest();
+  pendingExport = kind;
+  $('exportTitle').textContent = kind === 'glb' ? '导出 out.glb（glTF 2.0 二进制）' : '导出 out.obj + out.mtl';
+  $('exportSummary').innerHTML = `将导出 <b>${m.count}</b> 个物体（家具 ${furniture.length} 件）：`;
+  $('exportList').innerHTML = m.items.map(t => `<li>${t}</li>`).join('');
+  $('exportDlg').showModal();
+}
+$('glbBtn').onclick = () => openExport('glb');
+$('objBtn').onclick = () => openExport('obj');
+$('exportCancel').onclick = () => $('exportDlg').close();
+$('exportOk').onclick = async () => {
+  $('exportDlg').close();
+  if (pendingExport === 'glb') download(await exportGLB(), 'out.glb', 'model/gltf-binary');
+  else { const { obj, mtl } = exportOBJ(); download(obj, 'out.obj', 'text/plain'); setTimeout(() => download(mtl, 'out.mtl', 'text/plain'), 400); }
+};
+
+$('resetBtn').onclick = () => { clearFurniture(); resetCamera(); updateWarnings(); };
+
+// ---------- loading plans ----------
+function showBanner(html) { const b = $('banner'); b.innerHTML = html; b.style.display = html ? 'block' : 'none'; }
+function loadText(text, label) {
+  try { buildRoom(parsePlan(text), label); return true; }
+  catch (err) { showBanner(`图纸解析失败：${err.message}`); return false; }
+}
+async function loadFile(file) {
+  if (!file) return;
+  if (loadText(await file.text(), file.name)) showBanner('');
+}
+$('fileInput').addEventListener('change', (e) => { loadFile(e.target.files[0]); e.target.value = ''; });
+
+async function initialLoad() {
+  const src = new URLSearchParams(location.search).get('plan') || 'floorplan.svg';
+  try {
+    const res = await fetch(src, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    loadText(await res.text(), src);
+  } catch {
+    loadText($('embeddedPlan').textContent, '内嵌副本');
+    showBanner('当前是直接双击本地文件打开，浏览器禁止页面读取同目录的 <b>floorplan.svg</b>，所以显示的是页面内嵌的同一份图纸。' +
+      '改过 floorplan.svg 的话：点右上角“载入图纸…”选它，或把它拖进窗口，或用静态服务器打开本目录。');
+  }
+}
+
+// ---------- loop ----------
+function resize() {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  renderer.setSize(w, h, false); renderer.domElement.style.width = w + 'px'; renderer.domElement.style.height = h + 'px';
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(viewport);
+resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+window.app = { addFurniture, clearFurniture, exportGLB, exportOBJ, exportManifest, loadText, get plan() { return plan; }, get furniture() { return furniture; }, select };
+await initialLoad();
+
+// #selftest: places a sample layout through the public API and dumps the exports into the DOM
+// (used to produce the sample out.glb / out.obj with a headless browser; never runs otherwise).
+if (location.hash === '#selftest') {
+  const W = plan.widthM, D = plan.depthM;
+  addFurniture('desk', -W / 2 + 1.0, -D / 2 + 0.8);
+  addFurniture('chair', -W / 2 + 1.0, -D / 2 + 1.3, 180);
+  addFurniture('desk', -W / 2 + 1.0, D / 2 - 0.8, 180);
+  addFurniture('chair', -W / 2 + 1.0, D / 2 - 1.3, 0);
+  addFurniture('meetingTable', W / 4, -D / 4);
+  addFurniture('cabinet', 0.5, D / 2 - 0.3, 180);
+  select(null);
+  const glb = new Uint8Array(await exportGLB());
+  let bin = ''; for (let i = 0; i < glb.length; i += 0x8000) bin += String.fromCharCode(...glb.subarray(i, i + 0x8000));
+  const pre = document.createElement('pre'); pre.id = 'selftest-out'; pre.hidden = true;
+  pre.textContent = JSON.stringify({ plan: { w: plan.widthM, d: plan.depthM, walls: plan.walls.length }, manifest: exportManifest(), warnings: $('warnings').textContent, glb: btoa(bin), ...exportOBJ() });
+  document.body.appendChild(pre);
+}
+</script>
+</body>
+</html>

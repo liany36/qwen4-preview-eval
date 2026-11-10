@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>图纸 → 三维房间 · 摆放与导出</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #151b23;
+    --panel-2: #1c242e;
+    --line: #27313d;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --accent: #53d08a;
+    --bad: #ff5a5a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  aside {
+    width: 268px;
+    flex: 0 0 268px;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .brand {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand h1 { font-size: 14px; margin: 0 0 2px; letter-spacing: .02em; }
+  .brand p { margin: 0; font-size: 11px; color: var(--muted); }
+
+  .dims {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+    font-size: 12px;
+  }
+  .dims .k { color: var(--muted); }
+  .dims .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .dims .v em { font-style: normal; color: var(--muted); font-weight: 400; }
+
+  .palette { overflow-y: auto; flex: 1; padding: 8px 10px 16px; min-height: 0; }
+  .group-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin: 12px 6px 6px;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    margin-bottom: 6px;
+    cursor: grab;
+    user-select: none;
+  }
+  .item:hover { border-color: #3a4757; }
+  .item:active { cursor: grabbing; }
+  .thumb {
+    width: 30px; height: 30px; flex: 0 0 30px;
+    border-radius: 6px;
+    background: linear-gradient(160deg, var(--c), color-mix(in srgb, var(--c) 55%, #000));
+    box-shadow: inset 0 -6px 10px rgba(0,0,0,.28);
+  }
+  .meta { display: flex; flex-direction: column; min-width: 0; }
+  .meta strong { font-size: 12.5px; font-weight: 600; }
+  .meta span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .hint {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 8px 12px;
+    border-top: 1px solid var(--line);
+    line-height: 1.6;
+  }
+  .hint kbd {
+    background: #222b36; border: 1px solid #33404f; border-radius: 3px;
+    padding: 0 4px; font-size: 10px; font-family: ui-monospace, monospace;
+  }
+
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  header.bar {
+    height: 48px;
+    flex: 0 0 48px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .spacer { flex: 1; }
+  button, label.btn {
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 6px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover, label.btn:hover { border-color: #3a4757; background: #222c37; }
+  button.primary { background: #1e6f47; border-color: #2b8a5b; }
+  button.primary:hover { background: #23824f; }
+  button.ghost { background: transparent; }
+  input[type=file] { display: none; }
+  .chk { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+  .chk input { accent-color: var(--accent); }
+
+  #viewport { flex: 1; position: relative; min-height: 0; }
+  #viewport canvas { display: block; }
+
+  .overlay {
+    position: absolute;
+    left: 10px; bottom: 10px;
+    background: rgba(13,17,23,.82);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 6px 9px;
+    font-size: 11.5px;
+    color: var(--muted);
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  #dropHint {
+    position: absolute;
+    inset: 12px;
+    border: 2px dashed #2b8a5b;
+    border-radius: 12px;
+    background: rgba(83,208,138,.06);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-size: 15px;
+    pointer-events: none;
+  }
+  #dropHint.on { display: flex; }
+
+  .toast {
+    position: absolute;
+    top: 12px; left: 50%;
+    transform: translate(-50%, -12px);
+    background: rgba(21,27,35,.95);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    opacity: 0;
+    transition: opacity .18s, transform .18s;
+    pointer-events: none;
+    max-width: 70%;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.ok { border-color: #2b8a5b; }
+  .toast.bad { border-color: var(--bad); color: #ffd7d7; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand">
+    <h1>图纸 → 三维房间</h1>
+    <p>拖家具进场景 · 选中后微调 · 一键导出</p>
+  </div>
+
+  <div class="dims">
+    <div class="k">总宽</div>
+    <div class="v"><span id="dimWidth">–</span> <em>m</em></div>
+    <div class="k">总深</div>
+    <div class="v"><span id="dimDepth">–</span> <em>m</em></div>
+    <div class="k">墙段</div>
+    <div class="v"><span id="wallCount">–</span> <em>段</em></div>
+    <div class="k">窗</div>
+    <div class="v"><span id="winCount">–</span> <em>个</em></div>
+  </div>
+
+  <div class="palette" id="palette"></div>
+
+  <div class="hint">
+    拖动左侧条目到场景放置；点击条目落在房间中心。<br>
+    <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> ±10cm · <kbd>R</kbd> 旋转 15° · <kbd>Del</kbd> 删除
+  </div>
+</aside>
+
+<main>
+  <header class="bar">
+    <label class="btn" for="fileInput">载入新图纸</label>
+    <input type="file" id="fileInput" accept=".svg,image/svg+xml">
+    <button class="ghost" id="btnDemo">示例布局</button>
+    <button class="ghost" id="btnRotate">旋转 R</button>
+    <button class="ghost" id="btnDelete">删除</button>
+    <label class="chk"><input type="checkbox" id="chkSnap" checked>10cm 吸附</label>
+    <div class="spacer"></div>
+    <span id="selectionInfo" style="font-size:12px;color:var(--muted)">未选中</span>
+    <div class="spacer"></div>
+    <span style="font-size:12px;color:var(--muted)">将导出 <strong id="exportCount" style="color:var(--accent)">0</strong> 件家具</span>
+    <button id="btnClear">清空（回到刚导入）</button>
+    <button id="btnOBJ">导出 OBJ</button>
+    <button class="primary" id="btnGLB">导出 GLB</button>
+  </header>
+
+  <div id="viewport">
+    <div id="dropHint">松手放置家具</div>
+    <div class="overlay">总宽 <span id="dimWidthInline">–</span> m × 总深 <span id="dimDepthInline">–</span> m · 家具 <span id="statCount">0</span> 件 · 左键拖动家具 / 拖动空白处旋转视角 · 滚轮缩放</div>
+    <div class="toast" id="toast"></div>
+  </div>
+</main>
+
+<!-- 同目录 floorplan.svg 的内联副本：file:// 打开时 fetch 被拦，退回这里解析。
+     两条路径都交给 js/floorplan.js 计算，尺寸不写死。 -->
+<script type="text/plain" id="floorplan-source">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <desc>Office floor plan. 100 SVG units = 1 metre. Outer envelope 6.00 m x 4.00 m (x:100-700, y:100-500).</desc>
+  <rect x="0" y="0" width="800" height="600" fill="#f7f6f3"/>
+  <g class="walls" stroke="#333" stroke-width="4" stroke-linecap="square">
+    <line class="wall" x1="100" y1="100" x2="380" y2="100"/>
+    <line class="wall" x1="460" y1="100" x2="700" y2="100"/>
+    <line class="wall" x1="700" y1="100" x2="700" y2="500"/>
+    <line class="wall" x1="700" y1="500" x2="560" y2="500"/>
+    <line class="wall" x1="480" y1="500" x2="100" y2="500"/>
+    <line class="wall" x1="100" y1="500" x2="100" y2="100"/>
+    <line class="wall" x1="400" y1="100" x2="400" y2="240"/>
+    <line class="wall" x1="400" y1="320" x2="400" y2="500"/>
+    <line class="wall" x1="400" y1="320" x2="560" y2="320"/>
+  </g>
+  <g class="doors" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4">
+    <line class="door" x1="380" y1="100" x2="460" y2="100"/>
+    <line class="door" x1="480" y1="500" x2="560" y2="500"/>
+    <line class="door" x1="400" y1="240" x2="400" y2="320"/>
+  </g>
+  <g class="windows" stroke="#3d8ec9" stroke-width="6">
+    <line class="window" x1="560" y1="100" x2="680" y2="100"/>
+    <line class="window" x1="700" y1="220" x2="700" y2="340"/>
+    <line class="window" x1="100" y1="180" x2="100" y2="300"/>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#7a7a7a">
+    <text x="230" y="300">办公区</text>
+    <text x="520" y="200">会议室</text>
+    <text x="450" y="430">储物间</text>
+  </g>
+</svg>
+</script>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="vendor/GLTFExporter.js"></script>
+<script src="vendor/OBJExporter.js"></script>
+<script src="js/floorplan.js"></script>
+<script src="js/scene-builder.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>房间摆放</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #241e18;
+    --muted: #8c8174;
+    --panel: #2a241e;
+    --panel-2: #382f28;
+    --line: rgba(255, 244, 230, 0.12);
+    --paper: #e7e1d4;
+    --cream: #f6f1e7;
+    --accent: #d37a32;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+  }
+  #app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+  aside {
+    background: var(--panel);
+    color: var(--cream);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px 16px 16px;
+    min-height: 0;
+  }
+  h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: 0.04em; }
+  .size {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    font-size: 20px;
+    line-height: 1.35;
+  }
+  #rooms { display: flex; gap: 6px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
+  #rooms li {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 8px;
+    color: #d9cfc2;
+    font-size: 12px;
+  }
+  .catalog { display: grid; gap: 8px; }
+  .card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: var(--panel-2);
+    color: var(--cream);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+    cursor: grab;
+    touch-action: none;
+  }
+  .card:active { cursor: grabbing; }
+  .card svg { width: 46px; height: 32px; flex: none; }
+  .card b { display: block; font-size: 14px; }
+  .card span { display: block; color: var(--muted); font-size: 12px; }
+  .hint, #source, #selection { margin: 0; color: #c9beb0; font-size: 12px; line-height: 1.45; }
+  #warn {
+    margin: 0;
+    background: #6e2e22;
+    color: #ffe7df;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  #warn[hidden] { display: none; }
+  #manifest {
+    margin: 0;
+    background: #211c18;
+    border-radius: 8px;
+    padding: 8px 10px;
+    max-height: 132px;
+    overflow: auto;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #d5cbbf;
+  }
+  #manifest strong { display: block; color: white; margin-bottom: 4px; }
+  .actions { display: grid; gap: 8px; margin-top: auto; }
+  button.action, .file {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #23160d; font-weight: 650; }
+  button.ghost { background: transparent; color: var(--cream); border: 1px solid var(--line); }
+  .file {
+    display: block;
+    background: #211c18;
+    color: #d5cbbf;
+    font-size: 13px;
+  }
+  .file input { display: block; margin-top: 6px; width: 100%; }
+  #viewport { position: relative; min-width: 0; min-height: 0; }
+  #viewport canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+  .overlay-size {
+    position: absolute;
+    left: 16px;
+    top: 14px;
+    margin: 0;
+    padding: 8px 12px;
+    background: rgba(246, 241, 231, 0.92);
+    border-radius: 8px;
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .room-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    color: rgba(60, 48, 36, 0.72);
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <h1>房间摆放</h1>
+    <p class="size" data-size>正在读图纸…</p>
+    <ul id="rooms"></ul>
+    <div class="catalog">
+      <button class="card" type="button" data-kind="table">
+        <svg viewBox="0 0 46 32" aria-hidden="true">
+          <rect x="4" y="8" width="38" height="5" fill="#c4894e"/>
+          <rect x="8" y="13" width="3" height="14" fill="#8a5a30"/>
+          <rect x="35" y="13" width="3" height="14" fill="#8a5a30"/>
+        </svg>
+        <span><b>桌子</b><span>拖进房间，或点一下放在中央</span></span>
+      </button>
+      <button class="card" type="button" data-kind="chair">
+        <svg viewBox="0 0 46 32" aria-hidden="true">
+          <rect x="12" y="6" width="16" height="12" fill="#3e5563"/>
+          <rect x="12" y="16" width="22" height="4" fill="#2c3e49"/>
+          <rect x="14" y="20" width="2" height="8" fill="#1d2b33"/>
+          <rect x="30" y="20" width="2" height="8" fill="#1d2b33"/>
+        </svg>
+        <span><b>椅子</b><span>放下后可再拖，R 旋转 15°</span></span>
+      </button>
+      <button class="card" type="button" data-kind="cabinet">
+        <svg viewBox="0 0 46 32" aria-hidden="true">
+          <rect x="10" y="4" width="26" height="24" rx="1" fill="#6b4a2c"/>
+          <rect x="22" y="7" width="11" height="18" fill="#c49a62"/>
+        </svg>
+        <span><b>柜子</b><span>方向键每次移动 10 cm</span></span>
+      </button>
+    </div>
+    <p class="hint">左键拖已放下的家具。右键旋转视角，滚轮缩放。松手后位置留住。吸附 10 cm 网格。</p>
+    <p id="warn" hidden></p>
+    <div id="manifest"></div>
+    <p id="selection">未选中家具</p>
+    <div class="actions">
+      <button id="reset" class="action ghost" type="button">撤销到刚导入图纸</button>
+      <button id="export-glb" class="action primary" type="button">导出 out.glb</button>
+      <button id="export-obj" class="action primary" type="button">导出 out.obj + out.mtl</button>
+      <label class="file">载入新图纸（不刷新页面）
+        <input id="file" type="file" accept=".svg,image/svg+xml">
+      </label>
+      <p id="source"></p>
+    </div>
+  </aside>
+  <main id="viewport">
+    <p class="overlay-size" data-size>正在读图纸…</p>
+    <div id="labels"></div>
+  </main>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/addons/"
+  }
+}
+</script>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -12,13 +12,30 @@ scoring/   the six-dimension score tables, the leaderboard, and 8 screenshots
 
 ## The three tasks
 
-1. **Floor plan to 3D room.** Give the model an SVG floor plan; it has to parse the walls, doors and windows, build a 3D room you can furnish, and export a file that Unity and UE5 can open. The brief is in `tasks/task-1-brief.md`.
-2. **Broken backend handover.** Give the model an orders service left behind by a vanished contractor; it has to decide whether the service can take payments tomorrow and fix what must be fixed. The brief is in `tasks/task-2-brief.md`.
-3. **One-shot render.** The model picks either a rocket launch or a volcanic eruption and builds a scene that looks good the moment it opens. The brief is in `tasks/task-3-brief.md`.
+**Floor plan to digital twin.** Each model gets an SVG floor plan and has to parse it into a matching digital twin scene. The engine has to provide ready-made furniture — desks, chairs, filing cabinets — that the model can drag around and position. It then has to export the finished room as a model file that works in Unity and UE5: Unity reads obj and fbx natively, glb needs glTFast; UE5 does not read glTF natively and needs a plug-in or Datasmith. The brief lists two bonus items: warn when furniture clips through a wall or overlaps, and load a new floor plan without reloading the page. The task tests tool use and format discipline.
+
+The brief is in `tasks/task-1-brief.md`.
+
+**Backend repair.** A half-finished orders backend left behind by a contractor who walked away. I planted eight common problems in the orders module; the model has to decide whether the code can ship and give a fix list plus a plan. The task tests how well the model reads backend code — and whether it invents problems that are not there.
+
+The brief is in `tasks/task-2-brief.md`.
+
+**One-shot render.** The model picks a rocket launch or a volcanic eruption and has to render enough particles and smoke. To push the model, the brief requires the most spectacular moment to appear within 10 seconds of opening the page, with no interaction. The inviter asked for this task.
+
+The brief is in `tasks/task-3-brief.md`.
+
+The briefs use the relative paths from the original evaluation setup (each model folder had its own `_shared/` copy); this repository keeps the three input files under `tasks/assets/`.
 
 ## The four models
 
-`models/` contains `grok-4.7`, `opus-5.5`, `deepseek-v4.1` and `qwen4-preview`. Each folder has the same layout:
+Four models took part: Qwen4 preview, Opus 5.5, DeepSeek V4.1 Flash 1017 and Grok-bot 4.7. They used the same prompts and the same runtime, each task ran once, and the tasks covered engineering, backend and frontend work.
+
+- **Qwen4 preview.** 86.0 total, second place. First on the render task; the only model that chose the volcano.
+- **Opus 5.5.** 86.3 total, first place. Best on the floor-plan and backend tasks; lost points on the render task when its upper stage flew out of frame. Its pages load three.js from a CDN and need a network connection.
+- **DeepSeek V4.1 Flash 1017.** 84.6 total, third place. The steadiest delivery; its line-number callouts were the most accurate.
+- **Grok-bot 4.7.** 78.7 total, fourth place. The most designed-looking UI, but the lowest completeness and engineering scores on both the floor-plan and backend tasks.
+
+`models/` holds one folder per model, and all four folders have the same layout:
 
 - `answers/1/`: the floor-plan answer, a web page you can open directly.
 - `answers/2/`: the backend answer, with `FINDINGS.md` (the audit report) and `patched/orders.js` (the fixed code).
@@ -26,19 +43,6 @@ scoring/   the six-dimension score tables, the leaderboard, and 8 screenshots
 - `DELIVERY.md`: the model's own delivery notes, including what it admits it did not finish.
 
 The `out.glb`, `out.obj` and `out.mtl` files in the web pages are sample exports produced by the model itself.
-
-## How to open the pages
-
-Most pages open by double-clicking. A local server is safer, because browsers do not let a page read files from the same folder when it is opened as a local file:
-
-```
-cd models/qwen4-preview/answers/1
-python -m http.server 8000
-```
-
-Then open `http://localhost:8000/` in a browser.
-
-One exception: Opus loads three.js 0.160 from a CDN and needs a network connection. The other three models keep three.js in their local `vendor/` folder.
 
 ## How the scores were produced
 

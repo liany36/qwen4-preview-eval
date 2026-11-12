@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>火箭发射 · 实时渲染</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050810; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+  canvas { display: block; }
+  #fps {
+    position: fixed; top: 12px; left: 14px; color: #7fffd4; font-size: 14px;
+    font-family: Consolas, monospace; background: rgba(0,0,0,.45); padding: 6px 10px;
+    border-radius: 6px; z-index: 10; pointer-events: none;
+  }
+  #telemetry {
+    position: fixed; bottom: 14px; left: 14px; color: #cfe3ff; font-size: 13px;
+    font-family: Consolas, monospace; background: rgba(0,0,0,.45); padding: 8px 12px;
+    border-radius: 6px; z-index: 10; line-height: 1.7; pointer-events: none; white-space: pre;
+  }
+  #panel {
+    position: fixed; top: 12px; right: 14px; width: 240px; color: #dfe6f0;
+    background: rgba(10,16,28,.82); border: 1px solid #2a3a55; border-radius: 10px;
+    padding: 12px 14px; z-index: 10; font-size: 13px;
+  }
+  #panel h2 { font-size: 14px; margin-bottom: 8px; color: #8fd3ff; }
+  #panel label { display: block; margin: 8px 0 2px; color: #9fb0c8; }
+  #panel input[type=range] { width: 100%; }
+  #panel .val { color: #ffd479; font-family: Consolas, monospace; }
+  #reset {
+    width: 100%; margin-top: 10px; padding: 8px; border: none; border-radius: 8px;
+    background: #ff7043; color: #fff; font-size: 14px; cursor: pointer;
+  }
+  #reset:hover { background: #ff8a65; }
+  #physics {
+    position: fixed; bottom: 14px; right: 14px; max-width: 340px; color: #b8c4d8;
+    background: rgba(0,0,0,.45); padding: 8px 12px; border-radius: 6px;
+    font-size: 12px; line-height: 1.6; z-index: 10; pointer-events: none;
+  }
+  #event-banner {
+    position: fixed; top: 18%; left: 50%; transform: translateX(-50%);
+    color: #ffd479; font-size: 26px; font-weight: 700; letter-spacing: 4px;
+    text-shadow: 0 0 18px rgba(255,160,60,.8); z-index: 10; pointer-events: none;
+    opacity: 0; transition: opacity .4s;
+  }
+</style>
+</head>
+<body>
+<div id="fps">FPS --</div>
+<div id="telemetry"></div>
+<div id="panel">
+  <h2>发射控制台</h2>
+  <label>推力倍率 <span class="val" id="v-thrust">1.00×</span></label>
+  <input type="range" id="thrust" min="0.5" max="2" step="0.05" value="1">
+  <label>尾焰粒子数 <span class="val" id="v-particles">2500</span></label>
+  <input type="range" id="particles" min="500" max="6000" step="100" value="2500">
+  <label>时间流速 <span class="val" id="v-timescale">1.00×</span></label>
+  <input type="range" id="timescale" min="0.25" max="2" step="0.05" value="1">
+  <button id="reset">重置发射</button>
+</div>
+<div id="physics">物理自检：推力 F 恒定，质量 m = 干重 + 剩余燃料，随燃烧线性减小，加速度 a = F/m − g 持续增大；每级燃料将尽时 m 最小、该级加速度最大，全程峰值在二级燃尽瞬间。分离抛掉空壳使 m 骤降，但二级推力小，加速度先回落再爬升。尾焰膨胀随环境气压 exp(−h/H) 降低而增大，马赫环间距随之变宽。</div>
+<div id="event-banner"></div>
+<script src="three.min.js"></script>
+<script src="scene.js"></script>
+</body>
+</html>

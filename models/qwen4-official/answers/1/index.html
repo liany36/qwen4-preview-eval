@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图纸 → 3D 房间 · 家具摆放与导出</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #app { display: flex; width: 100%; height: 100%; }
+  #sidebar {
+    width: 280px; min-width: 280px; height: 100%; overflow-y: auto;
+    background: #1e2430; color: #dfe6f0; padding: 14px; z-index: 10;
+  }
+  #sidebar h1 { font-size: 16px; margin-bottom: 8px; color: #fff; }
+  #dims {
+    background: #2a3345; border-radius: 8px; padding: 10px; margin-bottom: 12px;
+    font-size: 15px; font-weight: 600; color: #8fd3ff;
+  }
+  .section-title { font-size: 12px; color: #93a0b4; margin: 12px 0 6px; letter-spacing: 1px; }
+  .furn-card {
+    display: flex; align-items: center; gap: 10px;
+    background: #2a3345; border: 1px solid #3a465c; border-radius: 8px;
+    padding: 8px 10px; margin-bottom: 8px; cursor: grab; user-select: none;
+  }
+  .furn-card:hover { border-color: #8fd3ff; }
+  .furn-card .icon { font-size: 22px; }
+  .furn-card .name { font-size: 14px; }
+  .furn-card .size { font-size: 11px; color: #93a0b4; }
+  button {
+    width: 100%; padding: 9px; margin-bottom: 8px; border: none; border-radius: 8px;
+    background: #3d7eff; color: #fff; font-size: 14px; cursor: pointer;
+  }
+  button:hover { background: #5a92ff; }
+  button.secondary { background: #3a465c; }
+  button.secondary:hover { background: #4a5872; }
+  button.danger { background: #a04040; }
+  button.danger:hover { background: #b85050; }
+  label.snap { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 6px 0; cursor: pointer; }
+  #export-list {
+    background: #232b3b; border-radius: 8px; padding: 8px; font-size: 12px;
+    color: #aeb9ca; line-height: 1.6; min-height: 40px;
+  }
+  #status {
+    margin-top: 10px; font-size: 12px; line-height: 1.5; color: #ffd479; min-height: 36px;
+    word-break: break-all;
+  }
+  #help { margin-top: 10px; font-size: 11px; color: #7d8aa0; line-height: 1.7; }
+  #viewport { flex: 1; position: relative; }
+  #viewport canvas { display: block; }
+  #hud {
+    position: absolute; top: 10px; left: 12px; color: #333; background: rgba(255,255,255,.8);
+    padding: 6px 10px; border-radius: 6px; font-size: 13px; pointer-events: none;
+  }
+  #file-input { display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <h1>图纸 → 3D 房间</h1>
+    <div id="dims">正在解析图纸…</div>
+
+    <div class="section-title">家具面板（拖进场景，或点击放置）</div>
+    <div class="furn-card" data-type="desk"><span class="icon">🪑</span><span><span class="name">桌子</span><br><span class="size">1.20 × 0.60 × 0.75 m</span></span></div>
+    <div class="furn-card" data-type="chair"><span class="icon">💺</span><span><span class="name">椅子</span><br><span class="size">0.45 × 0.45 × 0.90 m</span></span></div>
+    <div class="furn-card" data-type="cabinet"><span class="icon">🗄️</span><span><span class="name">柜子</span><br><span class="size">0.90 × 0.45 × 1.80 m</span></span></div>
+
+    <div class="section-title">操作</div>
+    <button id="btn-undo" class="danger">撤销：回到刚导入图纸的状态</button>
+    <button id="btn-glb">导出 out.glb（glTF 2.0）</button>
+    <button id="btn-obj">导出 out.obj + out.mtl（Unity）</button>
+    <button id="btn-load" class="secondary">载入新图纸（SVG，无需刷新）</button>
+    <button id="btn-v2" class="secondary">载入 v2 示例图纸（旋转/rect/折线）</button>
+    <input type="file" id="file-input" accept=".svg,image/svg+xml">
+    <label class="snap"><input type="checkbox" id="snap" checked> 拖拽吸附网格（0.1 m）</label>
+
+    <div class="section-title">导出清单（实时）</div>
+    <div id="export-list">—</div>
+
+    <div id="status"></div>
+    <div id="help">
+      鼠标左键拖动空白处：旋转视角 · 右键：平移 · 滚轮：缩放<br>
+      点击家具选中；按住家具拖动改位置<br>
+      方向键：±10 cm · R：旋转 15° · Delete：删除选中 · Esc：取消选中
+    </div>
+  </div>
+  <div id="viewport"><div id="hud"></div></div>
+</div>
+
+<!-- 默认图纸的内嵌副本：仅在 file:// 下 fetch 不可用时作为兜底；
+     通过静态服务器访问时优先 fetch 外部 floorplan.svg（改坐标重跑即时生效）。 -->
+<script type="text/plain" id="embedded-svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <desc>Office floor plan. 100 SVG units = 1 metre. Outer envelope 6.00 m x 4.00 m (x:100-700, y:100-500).</desc>
+  <rect x="0" y="0" width="800" height="600" fill="#f7f6f3"/>
+  <g class="walls" stroke="#333" stroke-width="4" stroke-linecap="square">
+    <line class="wall" x1="100" y1="100" x2="380" y2="100"/>
+    <line class="wall" x1="460" y1="100" x2="700" y2="100"/>
+    <line class="wall" x1="700" y1="100" x2="700" y2="500"/>
+    <line class="wall" x1="700" y1="500" x2="560" y2="500"/>
+    <line class="wall" x1="480" y1="500" x2="100" y2="500"/>
+    <line class="wall" x1="100" y1="500" x2="100" y2="100"/>
+    <line class="wall" x1="400" y1="100" x2="400" y2="240"/>
+    <line class="wall" x1="400" y1="320" x2="400" y2="500"/>
+    <line class="wall" x1="400" y1="320" x2="560" y2="320"/>
+  </g>
+  <g class="doors" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4">
+    <line class="door" x1="380" y1="100" x2="460" y2="100"/>
+    <line class="door" x1="480" y1="500" x2="560" y2="500"/>
+    <line class="door" x1="400" y1="240" x2="400" y2="320"/>
+  </g>
+  <g class="windows" stroke="#3d8ec9" stroke-width="6">
+    <line class="window" x1="560" y1="100" x2="680" y2="100"/>
+    <line class="window" x1="700" y1="220" x2="700" y2="340"/>
+    <line class="window" x1="100" y1="180" x2="100" y2="300"/>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#7a7a7a">
+    <text x="230" y="300">办公区</text>
+    <text x="520" y="200">会议室</text>
+    <text x="450" y="430">储物间</text>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#9a9a9a">
+    <text x="100" y="545">1 unit = 1 cm  ·  envelope 6.00 m x 4.00 m</text>
+  </g>
+</svg>
+</script>
+<script type="text/plain" id="embedded-svg-v2">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-600 0 800 800" width="800" height="800">
+  <desc>Office floor plan (v2). 100 SVG units = 1 metre. Drawn by a different designer: walls are one rect plus polylines, the whole plan is rotated.</desc>
+  <rect x="-600" y="0" width="800" height="800" fill="#fbfaf7"/>
+  <g transform="rotate(90)">
+    <rect class="wall" x="100" y="100" width="600" height="400" fill="none" stroke="#333" stroke-width="4"/>
+    <line class="wall" x1="400" y1="100" x2="400" y2="500"/>
+    <line class="door" x1="400" y1="240" x2="400" y2="320" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4"/>
+    <polyline class="wall" points="400,320 560,320 560,500" fill="none" stroke="#333" stroke-width="4"/>
+    <path class="window" d="M560 100 L680 100" stroke="#3d8ec9" stroke-width="6" fill="none"/>
+    <path class="window" d="M700 220 L700 340" stroke="#3d8ec9" stroke-width="6" fill="none"/>
+    <path class="window" d="M100 180 L100 300" stroke="#3d8ec9" stroke-width="6" fill="none"/>
+    <line class="door" x1="380" y1="100" x2="460" y2="100" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4"/>
+    <line class="door" x1="480" y1="500" x2="560" y2="500" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4"/>
+  </g>
+</svg>
+</script>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="vendor/GLTFExporter.js"></script>
+<script src="vendor/OBJExporter.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

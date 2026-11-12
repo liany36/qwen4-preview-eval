@@ -1,0 +1,70 @@
+# out.mtl — generated from floor plan scene
+newmtl wall_paint
+Ka 0.000 0.000 0.000
+Kd 0.888 0.863 0.815
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1
+
+newmtl door_threshold_1
+Ka 0.000 0.000 0.000
+Kd 0.527 0.041 0.024
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1
+
+newmtl door_threshold_2
+Ka 0.000 0.000 0.000
+Kd 0.527 0.041 0.024
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1
+
+newmtl door_threshold_3
+Ka 0.000 0.000 0.000
+Kd 0.527 0.041 0.024
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1
+
+newmtl window_glass
+Ka 0.000 0.000 0.000
+Kd 0.047 0.270 0.584
+Ks 0.000 0.000 0.000
+d 0.450
+illum 1
+
+newmtl wood
+Ka 0.000 0.000 0.000
+Kd 0.323 0.147 0.050
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1
+
+newmtl wood_dark
+Ka 0.000 0.000 0.000
+Kd 0.147 0.068 0.028
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1
+
+newmtl fabric
+Ka 0.000 0.000 0.000
+Kd 0.050 0.114 0.254
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1
+
+newmtl metal
+Ka 0.000 0.000 0.000
+Kd 0.254 0.279 0.319
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1
+
+newmtl floor_wood
+Ka 0.000 0.000 0.000
+Kd 0.694 0.624 0.527
+Ks 0.000 0.000 0.000
+d 1.000
+illum 1

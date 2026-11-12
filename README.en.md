@@ -1,13 +1,13 @@
-# Three tasks, four models: raw materials from one comparison
+# Three tasks, five models: raw materials from one comparison
 
-This repository contains the raw materials from one model comparison: three tasks, four models, each model ran each task exactly once, with no human cleanup afterwards. The companion article is on WeChat (link TBD).
+This repository contains the raw materials from one model comparison: three tasks, five models (one was added on 2026-11-12), each model ran each task exactly once, with no human cleanup afterwards. The companion article is on WeChat (link TBD).
 
 ## Layout
 
 ```
 tasks/     the three task briefs, plus the input files they need
 models/    each model's raw answers and its own delivery notes
-scoring/   the six-dimension score tables, the leaderboard, and 8 screenshots
+scoring/   the six-dimension score tables, the leaderboard, and 11 screenshots
 ```
 
 ## The three tasks
@@ -26,16 +26,17 @@ The brief is in `tasks/task-3-brief.md`.
 
 The briefs use the relative paths from the original evaluation setup (each model folder had its own `_shared/` copy); this repository keeps the three input files under `tasks/assets/`.
 
-## The four models
+## The five models
 
-Four models took part: Qwen4 preview, Opus 5.5, DeepSeek V4.1 Flash 1017 and Grok-bot 4.7. They used the same prompts and the same runtime, each task ran once, and the tasks covered engineering, backend and frontend work.
+Five models took part: Qwen4 preview, Opus 5.5, DeepSeek V4.1 Flash 1017, Grok-bot 4.7, and Qwen4 online preview (added on 2026-11-12). They used the same prompts and the same runtime, each task ran once, and the tasks covered engineering, backend and frontend work.
 
-- **Qwen4 preview.** 86.0 total, second place. First on the render task; the only model that chose the volcano.
-- **Opus 5.5.** 86.3 total, first place. Best on the floor-plan and backend tasks; lost points on the render task when its upper stage flew out of frame. Its pages load three.js from a CDN and need a network connection.
-- **DeepSeek V4.1 Flash 1017.** 84.6 total, third place. The steadiest delivery; its line-number callouts were the most accurate.
-- **Grok-bot 4.7.** 78.7 total, fourth place. The most designed-looking UI, but the lowest completeness and engineering scores on both the floor-plan and backend tasks.
+- **Qwen4 preview.** 86.0 total, third place. First on the render task; the only model among the original four that chose the volcano.
+- **Opus 5.5.** 86.3 total, second place. Best on the floor-plan and backend tasks among the original four; lost points on the render task when its upper stage flew out of frame. Its pages load three.js from a CDN and need a network connection.
+- **DeepSeek V4.1 Flash 1017.** 84.6 total, fourth place. The steadiest delivery; its line-number callouts were the most accurate.
+- **Grok-bot 4.7.** 78.7 total, fifth place. The most designed-looking UI, but the lowest completeness and engineering scores on both the floor-plan and backend tasks.
+- **Qwen4 online preview (added 2026-11-12).** 88.0 total, first place. 89.5 on the floor-plan task, 92.5 on the backend task and 81.5 on the render task — stronger than the original Qwen4 preview on the first two, weaker on the render.
 
-`models/` holds one folder per model, and all four folders have the same layout:
+`models/` holds one folder per model, and all five folders have the same layout:
 
 - `answers/1/`: the floor-plan answer, a web page you can open directly.
 - `answers/2/`: the backend answer, with `FINDINGS.md` (the audit report) and `patched/orders.js` (the fixed code).
@@ -50,7 +51,11 @@ Each task is worth 100 points, split across six dimensions: completeness, one-sh
 
 The total is the three task scores weighted 40/30/30.
 
-Leaderboard: Opus 5.5 scored 86.3, Qwen4 preview 86.0, DeepSeek V4.1 84.6, Grok-bot 4.7 78.7.
+Leaderboard: Qwen4 online preview scored 88.0, Opus 5.5 86.3, Qwen4 preview 86.0, DeepSeek V4.1 84.6, Grok-bot 4.7 78.7.
+
+## Added: Qwen4 online preview (2026-11-12)
+
+On 2026-11-12 the same three tasks were re-run once with Qwen4 online preview. It scored 89.5 / 92.5 / 81.5, 88.0 weighted. Raw answers are in `models/qwen4-online-preview/`, details in `scoring/qwen4-online-preview.md`. The other four models' scores are unchanged.
 
 ## Scope and caveats
 

@@ -1,0 +1,2 @@
+# Keep the supplied game HTML byte-for-byte, including original line endings.
+*/index.html -text

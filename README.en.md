@@ -1,6 +1,14 @@
-# Three tasks, five models: raw materials from one comparison
+# Three core tasks and a browser FPS task: evaluation materials
 
 This repository contains the raw materials from one model comparison: three tasks, five models (one was added on 2026-11-12), each model ran each task exactly once, with no human cleanup afterwards. The companion article is on WeChat (link TBD).
+
+## Added task 4: browser FPS development
+
+The complete HTML files for **SECTOR ZERO** (Qwen 4, about four hours) and the reference game **Saltline** are archived here:
+
+- [Both HTML files, sources and local launch instructions](games/README.md)
+- [Task 4 brief](tasks/task-4-brief.md)
+- [Playable demos and controls](https://mrlian.ai/model-eval/qwen4-preview-eval/games/)
 
 ## Layout
 

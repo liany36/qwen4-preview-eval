@@ -1,0 +1,16 @@
+[
+  {
+    "project": "saltline",
+    "path": "saltline/index.html",
+    "size_bytes": 1425509,
+    "sha256": "0e132e71b6c6fd65774cc0c7f30c9a2316a7cc8ce93dddac4db36e9f0cf2b326",
+    "preview_url": "https://mrlian.ai/model-eval/qwen4-preview-eval/games/saltline/"
+  },
+  {
+    "project": "sector-zero",
+    "path": "sector-zero/index.html",
+    "size_bytes": 144996,
+    "sha256": "a72656450e324837ea1f81279ee9b0709a1a0dceb186f51befba71c6df595ab1",
+    "preview_url": "https://mrlian.ai/model-eval/qwen4-preview-eval/games/sector-zero/"
+  }
+]
